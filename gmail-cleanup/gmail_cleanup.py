@@ -3,9 +3,11 @@
 Gmail Cleanup Script
 
 Operations:
-  1. Delete emails older than N days (default: 365)
-  2. Delete promotional/newsletter emails
-  3. Apply labels and archive categorized inbox emails
+  suggest     — Scan inbox and suggest label names based on sender patterns
+  delete_old  — Delete emails older than N days (default: 365)
+  delete_promo— Delete promotional/newsletter emails
+  label       — Apply labels and archive categorized inbox emails
+  all         — Run delete_old + delete_promo + label (default)
 
 Setup:
   1. Go to https://console.cloud.google.com/
@@ -13,14 +15,17 @@ Setup:
   3. Go to APIs & Services → Credentials → Create OAuth 2.0 Client ID (Desktop app)
   4. Download credentials.json to this directory
   5. pip install -r requirements.txt
-  6. python gmail_cleanup.py          # dry-run preview
-  7. python gmail_cleanup.py --execute  # apply changes
+  6. python gmail_cleanup.py --operation suggest   # analyse inbox, suggest labels
+  7. python gmail_cleanup.py                        # dry-run all cleanup ops
+  8. python gmail_cleanup.py --execute              # apply changes
 """
 
 import os
+import re
 import sys
 import argparse
 import logging
+from collections import Counter
 from datetime import datetime, timedelta
 
 from google.auth.transport.requests import Request
@@ -68,22 +73,152 @@ def authenticate():
 
 
 # ---------------------------------------------------------------------------
+# Domain → suggested label mapping
+# Extend this dict to teach the script about your own senders.
+# ---------------------------------------------------------------------------
+
+DOMAIN_LABEL_MAP = {
+    # Social networks
+    "twitter.com": "Social/Twitter",
+    "x.com": "Social/Twitter",
+    "linkedin.com": "Social/LinkedIn",
+    "facebook.com": "Social/Facebook",
+    "instagram.com": "Social/Instagram",
+    "reddit.com": "Social/Reddit",
+    "tiktok.com": "Social/TikTok",
+    "pinterest.com": "Social/Pinterest",
+    "discord.com": "Social/Discord",
+    # Finance / banking
+    "paypal.com": "Finance/PayPal",
+    "stripe.com": "Finance",
+    "chase.com": "Finance/Chase",
+    "bankofamerica.com": "Finance/BofA",
+    "wellsfargo.com": "Finance/WellsFargo",
+    "citibank.com": "Finance/Citi",
+    "americanexpress.com": "Finance/Amex",
+    "capitalone.com": "Finance/CapitalOne",
+    "revolut.com": "Finance/Revolut",
+    "wise.com": "Finance/Wise",
+    # Shopping / receipts
+    "amazon.com": "Receipts/Amazon",
+    "amazon.co.uk": "Receipts/Amazon",
+    "amazon.de": "Receipts/Amazon",
+    "ebay.com": "Receipts/eBay",
+    "etsy.com": "Receipts/Etsy",
+    "walmart.com": "Receipts/Walmart",
+    "target.com": "Receipts/Target",
+    "shopify.com": "Receipts",
+    "apple.com": "Receipts/Apple",
+    # Dev / work tools
+    "github.com": "Notifications/GitHub",
+    "atlassian.com": "Notifications/Jira",
+    "atlassian.net": "Notifications/Jira",
+    "slack.com": "Notifications/Slack",
+    "notion.so": "Notifications/Notion",
+    "figma.com": "Notifications/Figma",
+    "gitlab.com": "Notifications/GitLab",
+    "circleci.com": "Notifications/CI",
+    "travis-ci.com": "Notifications/CI",
+    "pagerduty.com": "Notifications/PagerDuty",
+    "datadoghq.com": "Notifications/Datadog",
+    # Email marketing platforms (generic newsletters)
+    "mailchimp.com": "Newsletters",
+    "sendgrid.net": "Newsletters",
+    "constantcontact.com": "Newsletters",
+    "klaviyo.com": "Newsletters",
+    "substack.com": "Newsletters",
+    "beehiiv.com": "Newsletters",
+    "campaign-archive.com": "Newsletters",
+    "mandrillapp.com": "Newsletters",
+    # Travel
+    "airbnb.com": "Travel/Airbnb",
+    "booking.com": "Travel",
+    "expedia.com": "Travel",
+    "hotels.com": "Travel",
+    "uber.com": "Travel/Uber",
+    "lyft.com": "Travel/Lyft",
+    "ryanair.com": "Travel",
+    "easyjet.com": "Travel",
+    "klm.com": "Travel",
+    # Cloud / infra
+    "aws.amazon.com": "Notifications/AWS",
+    "google.com": "Notifications/Google",
+    "azure.com": "Notifications/Azure",
+    "digitalocean.com": "Notifications/DigitalOcean",
+}
+
+
+# ---------------------------------------------------------------------------
 # Gmail helpers
 # ---------------------------------------------------------------------------
 
-def list_messages(service, query: str) -> list:
-    """Return all message IDs matching the Gmail search query."""
+def list_messages(service, query: str, limit: int = 0) -> list:
+    """Return message IDs matching the Gmail search query (up to `limit`, 0 = all)."""
     ids = []
     kwargs = {"userId": "me", "q": query, "maxResults": 500}
     while True:
         resp = service.users().messages().list(**kwargs).execute()
         for msg in resp.get("messages", []):
             ids.append(msg["id"])
+        if limit and len(ids) >= limit:
+            return ids[:limit]
         page_token = resp.get("nextPageToken")
         if not page_token:
             break
         kwargs["pageToken"] = page_token
     return ids
+
+
+def batch_get_senders(service, message_ids: list) -> list:
+    """
+    Fetch the From header for each message ID using Gmail batch HTTP requests.
+    Returns a list of raw From strings. Processes 100 messages per HTTP batch.
+    """
+    senders = []
+
+    for chunk_start in range(0, len(message_ids), 100):
+        chunk = message_ids[chunk_start: chunk_start + 100]
+        chunk_results = {}
+
+        def make_callback(msg_id):
+            def callback(request_id, response, exception):
+                if exception is None and response:
+                    headers = response.get("payload", {}).get("headers", [])
+                    for h in headers:
+                        if h["name"].lower() == "from":
+                            chunk_results[msg_id] = h["value"]
+                            break
+            return callback
+
+        batch = service.new_batch_http_request()
+        for msg_id in chunk:
+            batch.add(
+                service.users().messages().get(
+                    userId="me",
+                    id=msg_id,
+                    format="metadata",
+                    metadataHeaders=["From"],
+                ),
+                callback=make_callback(msg_id),
+            )
+        batch.execute()
+        senders.extend(chunk_results.get(mid, "") for mid in chunk)
+        log.info(
+            "  Fetched metadata: %d / %d",
+            min(chunk_start + 100, len(message_ids)),
+            len(message_ids),
+        )
+
+    return senders
+
+
+def parse_domain(from_header: str) -> str:
+    """Extract the sender domain from a raw From header value."""
+    match = re.search(r"<([^>]+)>", from_header)
+    email = match.group(1) if match else from_header.strip()
+    if "@" in email:
+        return email.split("@", 1)[1].lower().strip()
+    return ""
 
 
 def batch_delete(service, message_ids: list, dry_run: bool) -> int:
@@ -219,6 +354,78 @@ LABEL_RULES = [
 ]
 
 
+def suggest_labels(service, max_emails: int = 2000, min_count: int = 3) -> None:
+    """
+    Scan inbox senders and suggest label names based on DOMAIN_LABEL_MAP.
+    Prints two tables:
+      1. Known domains  — mapped to a suggested label
+      2. Unknown domains — seen >= min_count times; you can add them to DOMAIN_LABEL_MAP
+    """
+    log.info("Fetching up to %d inbox message IDs...", max_emails)
+    ids = list_messages(service, "in:inbox", limit=max_emails)
+    log.info("Fetched %d message IDs. Retrieving sender metadata...", len(ids))
+
+    raw_senders = batch_get_senders(service, ids)
+
+    domain_counts: Counter = Counter()
+    sender_counts: Counter = Counter()  # full address for unknown domains
+
+    for raw in raw_senders:
+        if not raw:
+            continue
+        domain = parse_domain(raw)
+        if domain:
+            domain_counts[domain] += 1
+        # Also track the full sender for display
+        match = re.search(r"<([^>]+)>", raw)
+        sender_email = match.group(1).lower() if match else raw.strip().lower()
+        sender_counts[sender_email] += 1
+
+    # --- Table 1: known domains with suggested labels ---
+    known_rows = []
+    seen_domains = set()
+    for domain, count in domain_counts.most_common():
+        label = DOMAIN_LABEL_MAP.get(domain)
+        if label:
+            known_rows.append((count, label, domain))
+            seen_domains.add(domain)
+
+    # --- Table 2: unknown domains appearing >= min_count times ---
+    unknown_rows = [
+        (count, domain)
+        for domain, count in domain_counts.most_common()
+        if domain not in seen_domains and count >= min_count
+    ]
+
+    print("\n" + "=" * 70)
+    print(" LABEL SUGGESTIONS  (based on inbox analysis)")
+    print("=" * 70)
+
+    if known_rows:
+        print(f"\n{'Count':>6}  {'Suggested Label':<30}  Sender Domain")
+        print(f"{'------':>6}  {'-' * 30}  {'-' * 30}")
+        for count, label, domain in sorted(known_rows, reverse=True):
+            print(f"{count:>6}  {label:<30}  {domain}")
+    else:
+        print("\n  (No known senders found in inbox)")
+
+    if unknown_rows:
+        print(f"\n--- Unknown domains appearing {min_count}+ times (not in DOMAIN_LABEL_MAP) ---")
+        print(f"{'Count':>6}  Domain")
+        print(f"{'------':>6}  {'-' * 40}")
+        for count, domain in unknown_rows[:30]:  # cap at 30
+            print(f"{count:>6}  {domain}")
+        print(
+            "\n  Tip: add these to DOMAIN_LABEL_MAP in the script to auto-label them."
+        )
+
+    print("\n--- Next steps ---")
+    print("  1. Review the suggestions above and customise LABEL_RULES / DOMAIN_LABEL_MAP")
+    print("  2. Run:  python gmail_cleanup.py                  (dry-run all ops)")
+    print("  3. Run:  python gmail_cleanup.py --execute        (apply changes)")
+    print("=" * 70 + "\n")
+
+
 def apply_labels(service, dry_run: bool) -> int:
     """Apply labels and archive matching inbox emails. Returns total count."""
     total = 0
@@ -245,14 +452,15 @@ def apply_labels(service, dry_run: bool) -> int:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Clean up Gmail: delete old/promo emails, apply labels.",
+        description="Clean up Gmail: suggest labels, delete old/promo emails, apply labels.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python gmail_cleanup.py                        # dry-run all operations\n"
-            "  python gmail_cleanup.py --execute              # apply all changes\n"
-            "  python gmail_cleanup.py --days 180             # use 6-month cutoff\n"
-            "  python gmail_cleanup.py --operation delete_old # only delete old emails\n"
+            "  python gmail_cleanup.py --operation suggest      # analyse inbox, suggest labels\n"
+            "  python gmail_cleanup.py                          # dry-run all cleanup ops\n"
+            "  python gmail_cleanup.py --execute                # apply all changes\n"
+            "  python gmail_cleanup.py --days 180               # use 6-month cutoff\n"
+            "  python gmail_cleanup.py --operation delete_old   # only delete old emails\n"
         ),
     )
     parser.add_argument(
@@ -268,11 +476,27 @@ def main():
     )
     parser.add_argument(
         "--operation",
-        choices=["all", "delete_old", "delete_promo", "label"],
+        choices=["all", "suggest", "delete_old", "delete_promo", "label"],
         default="all",
         help="Which operation to run (default: all)",
     )
+    parser.add_argument(
+        "--max-emails",
+        type=int,
+        default=2000,
+        metavar="N",
+        help="Max inbox emails to scan when using --operation suggest (default: 2000)",
+    )
     args = parser.parse_args()
+
+    # 'suggest' is read-only — skip dry-run/execute logic
+    if args.operation == "suggest":
+        try:
+            service = authenticate()
+        except Exception as exc:
+            sys.exit(f"Authentication failed: {exc}")
+        suggest_labels(service, max_emails=args.max_emails)
+        return
 
     dry_run = not args.execute
 
