@@ -16,8 +16,9 @@ A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-li
 5. Google sign-in         → .env + Google Cloud Console
 6. Install as an app      → PWA in Chrome/Safari
 7. Web search             → SearXNG (already in stack, enable in Admin Panel)
-8. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
-9. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
+8. Feature requests       → tools/feature-request.py + ntfy app on your phone
+9. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
+10. Remote access         → Entra App Proxy or Cloudflare Tunnel (when ready)
 ```
 
 ---
@@ -210,7 +211,50 @@ A search toggle button appears in the chat input bar. When active, the model fet
 
 ---
 
-## Part 8 — Managing Docker from Windows (Portainer)
+## Part 8 — Feature Requests to Drew (ntfy)
+
+Jess can say "tell Drew I want X" in any conversation and the model will send you a push notification. No buttons, no forms — just natural language.
+
+### Step 1 — Get a channel name
+
+Pick a long random string for your private channel name. Generate one:
+
+```bash
+openssl rand -hex 8
+# example output: a3f7c2d09e1b4852
+```
+
+Your channel URL will be: `https://ntfy.sh/drew-llm-a3f7c2d09e1b4852`
+
+No account needed on ntfy.sh. The channel name is the only thing keeping it private, so make it random.
+
+### Step 2 — Install the ntfy app
+
+Install **ntfy** on your phone ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) / [iOS](https://apps.apple.com/app/ntfy/id1625396347)) and subscribe to your channel URL.
+
+### Step 3 — Install the tool in Open WebUI
+
+1. Open `tools/feature-request.py` from this repo
+2. In Open WebUI: **Admin Panel → Tools → + (Add Tool)**
+3. Paste the contents of the file
+4. In the **Valves** section, replace `your-channel-name-here` with your actual channel name
+5. Save and enable the tool
+
+### Step 4 — Tell the model about it (add to system prompt)
+
+Add one line to the end of `system-prompt.txt` before you paste it into the Admin Panel:
+
+```
+If the user asks you to tell Drew something or request a feature, use the send_feature_request tool.
+```
+
+### How it works
+
+Jess types anything like *"this is great but can you tell Drew I'd like it to read responses aloud?"* — the model calls the tool, you get a notification on your phone with her exact request.
+
+---
+
+## Part 10 — Managing Docker from Windows (Portainer)
 
 Portainer runs as part of the stack and gives you a browser-based Docker management UI — no need to SSH in for day-to-day tasks.
 
@@ -224,7 +268,7 @@ From Portainer you can:
 
 ---
 
-## Part 9 — Azure Monitoring (Sentinel)
+## Part 11 — Azure Monitoring (Sentinel)
 
 Ships SSH auth events, sudo logs, and firewall activity to your existing Sentinel workspace via Azure Arc + Azure Monitor Agent.
 
@@ -284,7 +328,7 @@ Useful analytics rules to enable in Sentinel:
 
 ---
 
-## Part 10 — Remote Access from School (Phase 2)
+## Part 12 — Remote Access from School (Phase 2)
 
 Two options — pick based on your Azure licensing.
 
