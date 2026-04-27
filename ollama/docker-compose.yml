@@ -32,6 +32,8 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - ENABLE_OAUTH_SIGNUP=${ENABLE_OAUTH_SIGNUP:-false}
       - DEFAULT_USER_ROLE=user
+      # Memory on by default — users can disable in Settings → Personalization → Memory
+      - ENABLE_MEMORY_INJECTION=True
     volumes:
       - webui_data:/app/backend/data
     restart: unless-stopped
