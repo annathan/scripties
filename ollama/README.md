@@ -1,99 +1,136 @@
 # Self-Hosted LLM — Ollama + Open WebUI
 
-A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-like frontend) on your home PC with NVIDIA GPU acceleration.
+A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-like frontend) with NVIDIA GPU acceleration. Designed for an Ubuntu home server, accessible from any device on the local network.
+
+**Hardware used:** RTX 3060 12GB, 32GB RAM — can run 8B models fully on GPU with headroom for 13B quantised.
 
 ---
 
-## Prerequisites
+## Part 1 — Install Ubuntu
 
-Install these once before running setup:
+Install **Ubuntu 24.04 LTS** (Server edition is fine — no GUI needed).
 
-1. **Docker Desktop for Windows** — [download](https://www.docker.com/products/docker-desktop/)
-   - During install, enable the **WSL 2** backend when prompted
-2. **NVIDIA Container Toolkit for WSL 2** — lets Docker use your GPU
-   - Follow the [NVIDIA WSL 2 guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
-   - Short version: install the CUDA driver for WSL from [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads), then restart Docker Desktop
+During install:
+- Create a user account you'll remember
+- Enable OpenSSH server so you can manage it remotely from your main PC
 
----
+After first boot, update everything:
 
-## First-Time Setup
-
-Open **PowerShell** in this directory and run:
-
-```powershell
-.\setup.ps1
+```bash
+sudo apt update && sudo apt upgrade -y && sudo reboot
 ```
 
-The script will:
-1. Verify Docker is running
-2. Create a `.env` file (you'll need to set a secret key — it will tell you if this is needed)
-3. Start both containers
-4. Wait for Ollama to be ready
-5. Pull the `llama3.1:8b` model (~5 GB download)
+### Install NVIDIA drivers
 
-When done, open **http://localhost:3000** in your browser, create an account, and start chatting.
+```bash
+sudo ubuntu-drivers autoinstall
+sudo reboot
+```
+
+Verify after reboot:
+```bash
+nvidia-smi
+```
+You should see your RTX 3060 listed with driver version and VRAM.
 
 ---
 
-## Google Sign-In (Recommended)
+## Part 2 — Set Up the Stack
 
-Open WebUI has built-in Google OAuth support. This means you and your wife can sign in with your Google accounts — no separate passwords to manage, and it feels just like any modern app.
+Clone this repo (or copy the `ollama/` folder) onto the server, then run the setup script:
 
-### One-time setup (takes ~5 minutes)
+```bash
+cd ollama/
+chmod +x setup.sh
+./setup.sh
+```
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project (name it anything, e.g. "Home AI")
-2. Navigate to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
-3. Set Application type to **Web application**
+The script handles everything in order:
+1. Installs Docker (official installer, adds you to the `docker` group)
+2. Installs NVIDIA Container Toolkit (GPU passthrough for Docker)
+3. Creates a `.env` file — **you'll need to edit it before re-running** (see below)
+4. Starts the containers
+5. Registers the stack as a systemd service so it starts automatically on boot
+6. Waits for Ollama, then pulls `llama3.1:8b` (~5 GB)
+
+### The `.env` file
+
+After the first run creates it, edit `.env`:
+
+```bash
+nano ollama/.env
+```
+
+Set a real secret key — generate one with:
+```bash
+openssl rand -hex 32
+```
+
+Then re-run `./setup.sh` to continue.
+
+---
+
+## Part 3 — Google Sign-In
+
+Open WebUI supports Google OAuth out of the box. This means you and your wife sign in with your Google accounts — no separate passwords.
+
+### One-time setup (~5 minutes)
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → create a project (name it anything, e.g. "Home AI")
+2. **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
+3. Application type: **Web application**
 4. Under **Authorised redirect URIs**, add:
-   - `http://localhost:3000/oauth/google/callback`
-   - `http://192.168.x.x:3000/oauth/google/callback` (your local IP — run `ipconfig | findstr "IPv4"` to find it)
-5. Copy the **Client ID** and **Client Secret** into your `.env` file:
    ```
-   GOOGLE_CLIENT_ID=xxxxxxx.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxx
+   http://localhost:3000/oauth/google/callback
+   http://<server-LAN-IP>:3000/oauth/google/callback
+   ```
+   Find your server's LAN IP with: `hostname -I`
+5. Copy **Client ID** and **Client Secret** into `.env`:
+   ```
+   GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
    ENABLE_OAUTH_SIGNUP=true
    ```
-6. Restart the stack: `docker compose up -d`
+6. Restart: `docker compose restart open-webui`
 
-The Open WebUI login page will now show a **"Sign in with Google"** button. First login automatically creates the account.
+The login page will now show **Sign in with Google**. First sign-in auto-creates the account.
 
-> **Tip:** In Open WebUI settings (Admin Panel → Users) you can disable the email/password signup form entirely once both accounts are created, so only Google sign-in works.
+> Once both accounts are created, you can disable email/password signup in **Admin Panel → Settings → General** so only Google sign-in works.
 
 ---
 
-## Use it Like an App (No Browser Bar)
+## Part 4 — Use it Like an App
 
-Open WebUI is a **Progressive Web App (PWA)**, meaning you can install it to feel like a native app — its own icon, standalone window, no browser address bar — just like the ChatGPT or Claude apps.
+Open WebUI is a **Progressive Web App (PWA)** — you can install it to feel like a native app with its own icon and no browser bar.
 
-### On Windows / Mac (Chrome or Edge)
-1. Open `http://localhost:3000` (or the network URL) in Chrome or Edge
-2. Look for the **install icon** (⊕) in the address bar, or open the browser menu and choose **"Install Open WebUI"** / **"Add to Desktop"**
-3. Click **Install** — it appears as an app in the Start Menu / taskbar
+### On any laptop (Chrome or Edge)
+1. Open `http://<server-IP>:3000` in Chrome or Edge
+2. Click the install icon (⊕) in the address bar, or **browser menu → "Install Open WebUI"**
+3. It appears in the taskbar/Start Menu as a standalone app
 
-### On Android
+### On Android (Chrome)
 1. Open the URL in Chrome
-2. Tap the three-dot menu → **"Add to Home screen"**
-3. The app icon appears on the home screen, opens full-screen
+2. Three-dot menu → **"Add to Home screen"**
 
-### On iPhone / iPad
-1. Open the URL in **Safari**
-2. Tap the Share button (box with arrow) → **"Add to Home Screen"**
-3. The app icon appears on the home screen, opens full-screen
+### On iPhone/iPad (Safari)
+1. Open the URL in Safari
+2. Share button → **"Add to Home Screen"**
 
-> Your wife can do this on her school laptop or phone — she taps/clicks the icon and goes straight into the chat, just like a real app.
+Your wife taps the icon and goes straight to the chat — same experience as the ChatGPT or Claude app.
 
 ---
 
-## Giving Your Wife Access on the Home Network
+## Part 5 — Sharing on the Home Network
 
-1. On your PC, run:
-   ```powershell
-   ipconfig | findstr "IPv4"
-   ```
-2. Find the address that starts with `192.168.x.x` (or `10.x.x.x`)
-3. Share that URL with her: `http://192.168.x.x:3000`
+The setup script prints your server's LAN IP at the end. To find it again:
 
-She opens it in Chrome or Safari, signs in with Google, installs it as a PWA (see above), and from then on taps the icon like any app.
+```bash
+hostname -I
+```
+
+Give her the URL: `http://192.168.x.x:3000`
+
+Any device on your home Wi-Fi can reach it. She signs in with Google and installs it as a PWA (above).
 
 ---
 
@@ -103,32 +140,34 @@ She opens it in Chrome or Safari, signs in with Google, installs it as a PWA (se
 |---|---|
 | Start the stack | `docker compose up -d` |
 | Stop the stack | `docker compose down` |
+| Restart after config change | `docker compose restart open-webui` |
 | View logs | `docker logs open-webui` or `docker logs ollama` |
 | Pull another model | `docker exec ollama ollama pull <model>` |
-| List downloaded models | `docker exec ollama ollama list` |
+| List models | `docker exec ollama ollama list` |
 | Remove a model | `docker exec ollama ollama rm <model>` |
 
-### Suggested Models
+### Models your 3060 (12GB VRAM) can run
 
-| Model | Size | Good for |
-|---|---|---|
-| `llama3.1:8b` | ~5 GB | General chat, Q&A, writing (already installed) |
-| `mistral:7b` | ~4.5 GB | Fast responses, general use |
-| `gemma2:9b` | ~5.5 GB | Reasoning, instructions |
-| `phi3:mini` | ~2.3 GB | Quick answers, low memory use |
+| Model | VRAM | Speed | Good for |
+|---|---|---|---|
+| `llama3.1:8b` | ~5 GB | Fast | General chat, Q&A, writing (already installed) |
+| `mistral:7b` | ~4.5 GB | Fast | General use, instructions |
+| `gemma2:9b` | ~5.5 GB | Fast | Reasoning, following instructions |
+| `llama3.1:13b` | ~8 GB | Moderate | Noticeably smarter, still fits on GPU |
+| `phi3:mini` | ~2.3 GB | Very fast | Quick answers, low footprint |
 
-Pull any of them with:
-```powershell
-docker exec ollama ollama pull mistral:7b
+Pull any with:
+```bash
+docker exec ollama ollama pull llama3.1:13b
 ```
 
 ---
 
-## Remote Access from School (Phase 2)
+## Part 6 — Remote Access from School (Phase 2)
 
-When you're ready to let her access the LLM from outside your home network, the easiest approach is a **Cloudflare Tunnel** — no port forwarding or router changes needed, and she gets a stable `https://` URL.
+When you're ready for her to access it outside the home network, use a **Cloudflare Tunnel** — no port forwarding, no router changes, and she gets a stable `https://` URL.
 
-Add this service to `docker-compose.yml`:
+Add to `docker-compose.yml`:
 
 ```yaml
   cloudflared:
@@ -142,36 +181,40 @@ Add this service to `docker-compose.yml`:
     restart: unless-stopped
 ```
 
-Then add `CLOUDFLARE_TUNNEL_TOKEN=<your-token>` to `.env`.
+Add to `.env`:
+```
+CLOUDFLARE_TUNNEL_TOKEN=<your-token>
+```
 
-To get a tunnel token:
-1. Sign up free at [cloudflare.com](https://cloudflare.com)
-2. Go to **Zero Trust → Networks → Tunnels → Create a tunnel**
-3. Choose **Cloudflared**, copy the token
-4. Set the tunnel to route to `http://open-webui:8080`
-5. Add the new `https://` URL to your Google OAuth **Authorised redirect URIs** (see Google Sign-In section above)
+To get a token:
+1. Free account at [cloudflare.com](https://cloudflare.com)
+2. **Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared**
+3. Copy the token, set tunnel to route to `http://open-webui:8080`
+4. Add the new `https://` URL to your Google OAuth **Authorised redirect URIs**
 
-She'll get a stable public URL she can open from any device, anywhere.
+Then restart: `docker compose up -d`
 
 ---
 
 ## Troubleshooting
 
-**GPU not being used:**
-```powershell
+**Check GPU is being used:**
+```bash
 docker exec ollama ollama ps
+# Should show model on GPU. If it says CPU, check nvidia-smi runs and Container Toolkit is installed.
 ```
-Should show your model running on GPU. If it says CPU, check NVIDIA Container Toolkit is installed correctly.
 
-**Can't reach from another device on the network:**
-- Make sure Windows Firewall allows inbound on port 3000
-- Check with: `netstat -an | findstr "3000"`
+**Can't reach from another device:**
+```bash
+sudo ufw allow 3000/tcp   # if ufw firewall is active
+```
 
-**Open WebUI won't start:**
-```powershell
+**Logs:**
+```bash
 docker logs open-webui
+docker logs ollama
 ```
 
-**Google sign-in not appearing:**
-- Make sure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in `.env` (no quotes, no spaces)
-- Restart after editing `.env`: `docker compose up -d`
+**Google sign-in not showing:**
+- Check `.env` has `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` set (no quotes, no spaces)
+- `docker compose restart open-webui`
