@@ -1,0 +1,113 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "dcrName": {
+      "type": "string",
+      "defaultValue": "dcr-home-llm-server",
+      "metadata": { "description": "Name for the Data Collection Rule" }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Azure region" }
+    },
+    "workspaceResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics workspace to send logs to. Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.OperationalInsights/workspaces/{name}"
+      }
+    },
+    "arcMachineResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Azure Arc machine. Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.HybridCompute/machines/{name}"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dcrName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "description": "Collect syslog from home LLM server: auth events, SSH, sudo, Docker daemon",
+        "dataSources": {
+          "syslog": [
+            {
+              "name": "syslog-auth",
+              "streams": ["Microsoft-Syslog"],
+              "facilityNames": ["auth", "authpriv"],
+              "logLevels": ["Debug", "Info", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency"],
+              "comment": "SSH logins, sudo escalation, PAM authentication"
+            },
+            {
+              "name": "syslog-daemon",
+              "streams": ["Microsoft-Syslog"],
+              "facilityNames": ["daemon", "syslog"],
+              "logLevels": ["Warning", "Error", "Critical", "Alert", "Emergency"],
+              "comment": "System services including Docker daemon — warnings and above only to reduce noise"
+            },
+            {
+              "name": "syslog-kern",
+              "streams": ["Microsoft-Syslog"],
+              "facilityNames": ["kern"],
+              "logLevels": ["Warning", "Error", "Critical", "Alert", "Emergency"],
+              "comment": "Kernel messages — UFW firewall blocks appear here"
+            }
+          ]
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "law-destination",
+              "workspaceResourceId": "[parameters('workspaceResourceId')]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": ["Microsoft-Syslog"],
+            "destinations": ["law-destination"]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+      "apiVersion": "2022-06-01",
+      "name": "[concat(parameters('dcrName'), '-association')]",
+      "scope": "[parameters('arcMachineResourceId')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+      ],
+      "properties": {
+        "dataCollectionRuleId": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]",
+        "description": "Associate DCR with home LLM server Arc machine"
+      }
+    },
+    {
+      "type": "Microsoft.HybridCompute/machines/extensions",
+      "apiVersion": "2022-11-10",
+      "name": "[concat(last(split(parameters('arcMachineResourceId'), '/')), '/AzureMonitorLinuxAgent')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Monitor",
+        "type": "AzureMonitorLinuxAgent",
+        "typeHandlerVersion": "1.0",
+        "autoUpgradeMinorVersion": true,
+        "enableAutomaticUpgrade": true
+      }
+    }
+  ],
+  "outputs": {
+    "dcrResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+    }
+  }
+}
