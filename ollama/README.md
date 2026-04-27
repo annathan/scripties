@@ -2,19 +2,33 @@
 
 A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-like frontend) with NVIDIA GPU acceleration. Designed for an Ubuntu home server, accessible from any device on the local network.
 
-**Hardware used:** RTX 3060 12GB, 32GB RAM — can run 8B models fully on GPU with headroom for 13B quantised.
+**Hardware used:** RTX 3060 12GB, 32GB RAM — runs 8B models fully on GPU with headroom for 13B quantised.
+
+---
+
+## Setup order
+
+```
+1. Install Ubuntu         → ubuntu install + NVIDIA drivers
+2. Harden the server      → harden.sh
+3. Start the stack        → setup.sh
+4. Google sign-in         → .env + Google Cloud Console
+5. Install as an app      → PWA in Chrome/Safari
+6. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
+7. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
+```
 
 ---
 
 ## Part 1 — Install Ubuntu
 
-Install **Ubuntu 24.04 LTS** (Server edition is fine — no GUI needed).
+Install **Ubuntu 24.04 LTS** (Server edition — no GUI needed).
 
 During install:
 - Create a user account you'll remember
-- Enable OpenSSH server so you can manage it remotely from your main PC
+- Enable OpenSSH server
 
-After first boot, update everything:
+After first boot:
 
 ```bash
 sudo apt update && sudo apt upgrade -y && sudo reboot
@@ -25,58 +39,75 @@ sudo apt update && sudo apt upgrade -y && sudo reboot
 ```bash
 sudo ubuntu-drivers autoinstall
 sudo reboot
+nvidia-smi   # verify — should show RTX 3060 with 12GB VRAM
 ```
-
-Verify after reboot:
-```bash
-nvidia-smi
-```
-You should see your RTX 3060 listed with driver version and VRAM.
 
 ---
 
-## Part 2 — Set Up the Stack
+## Part 2 — Harden the Server
 
-Clone this repo (or copy the `ollama/` folder) onto the server, then run the setup script:
+Run this **before** setting up Docker. It configures SSH, firewall, and automatic security updates.
 
 ```bash
-cd ollama/
+chmod +x harden.sh
+./harden.sh
+```
+
+**Before running:** copy your SSH public key from your Windows PC first, or the script will stop and warn you:
+
+```powershell
+# On your Windows PC (run once if you don't have a key yet)
+ssh-keygen
+
+# Then copy it to the server
+ssh-copy-id youruser@192.168.x.x
+```
+
+**What `harden.sh` does:**
+- SSH: disables password auth and root login, limits auth attempts
+- UFW firewall: SSH rate-limited; ports 3000 (WebUI) and 9000 (Portainer) allowed from LAN only; everything else denied
+- fail2ban: bans IPs after 3 failed SSH attempts for 24 hours
+- Unattended-upgrades: security patches applied automatically
+
+---
+
+## Part 3 — Set Up the Stack
+
+```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-The script handles everything in order:
-1. Installs Docker (official installer, adds you to the `docker` group)
-2. Installs NVIDIA Container Toolkit (GPU passthrough for Docker)
-3. Creates a `.env` file — **you'll need to edit it before re-running** (see below)
-4. Starts the containers
-5. Registers the stack as a systemd service so it starts automatically on boot
-6. Waits for Ollama, then pulls `llama3.1:8b` (~5 GB)
+The script:
+1. Installs Docker (official installer)
+2. Installs NVIDIA Container Toolkit (GPU passthrough)
+3. Creates `.env` — **edit it before re-running** (see below)
+4. Starts the containers (Ollama, Open WebUI, Portainer)
+5. Registers the stack as a systemd service — starts on boot without login
+6. Pulls `llama3.1:8b` (~5 GB)
 
-### The `.env` file
-
-After the first run creates it, edit `.env`:
+### Set the secret key in `.env`
 
 ```bash
-nano ollama/.env
+nano .env
 ```
 
-Set a real secret key — generate one with:
+Generate a key:
 ```bash
 openssl rand -hex 32
 ```
 
-Then re-run `./setup.sh` to continue.
+Re-run `./setup.sh` after saving.
 
 ---
 
-## Part 3 — Google Sign-In
+## Part 4 — Google Sign-In
 
-Open WebUI supports Google OAuth out of the box. This means you and your wife sign in with your Google accounts — no separate passwords.
+Open WebUI supports Google OAuth — sign in with your Google accounts, no separate passwords.
 
 ### One-time setup (~5 minutes)
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) → create a project (name it anything, e.g. "Home AI")
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → create a project (e.g. "Home AI")
 2. **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
 3. Application type: **Web application**
 4. Under **Authorised redirect URIs**, add:
@@ -84,137 +115,203 @@ Open WebUI supports Google OAuth out of the box. This means you and your wife si
    http://localhost:3000/oauth/google/callback
    http://<server-LAN-IP>:3000/oauth/google/callback
    ```
-   Find your server's LAN IP with: `hostname -I`
-5. Copy **Client ID** and **Client Secret** into `.env`:
+   (Find the LAN IP: `hostname -I`)
+5. Add to `.env`:
    ```
    GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
    ENABLE_OAUTH_SIGNUP=true
    ```
-6. Restart: `docker compose restart open-webui`
+6. `docker compose restart open-webui`
 
-The login page will now show **Sign in with Google**. First sign-in auto-creates the account.
-
-> Once both accounts are created, you can disable email/password signup in **Admin Panel → Settings → General** so only Google sign-in works.
+> Once both accounts are set up, disable email/password signup in **Admin Panel → Settings → General** so only Google sign-in works.
 
 ---
 
-## Part 4 — Use it Like an App
+## Part 5 — Use it Like an App + Voice Input
 
-Open WebUI is a **Progressive Web App (PWA)** — you can install it to feel like a native app with its own icon and no browser bar.
+Open WebUI is a **Progressive Web App (PWA)** — install it as a standalone app with its own icon and no browser bar.
 
-### On any laptop (Chrome or Edge)
-1. Open `http://<server-IP>:3000` in Chrome or Edge
-2. Click the install icon (⊕) in the address bar, or **browser menu → "Install Open WebUI"**
-3. It appears in the taskbar/Start Menu as a standalone app
+### Installing as an app
 
-### On Android (Chrome)
-1. Open the URL in Chrome
-2. Three-dot menu → **"Add to Home screen"**
+**On any laptop (Chrome or Edge):**
+1. Open `http://<server-IP>:3000`
+2. Click the install icon (⊕) in the address bar → **"Install Open WebUI"**
+3. Appears in the taskbar/Start Menu, opens in its own window
 
-### On iPhone/iPad (Safari)
-1. Open the URL in Safari
-2. Share button → **"Add to Home Screen"**
+**On Android (Chrome):**  Three-dot menu → **"Add to Home screen"**
 
-Your wife taps the icon and goes straight to the chat — same experience as the ChatGPT or Claude app.
+**On iPhone/iPad (Safari):**  Share button → **"Add to Home Screen"**
+
+### Voice input (speech to text)
+
+Open WebUI has a built-in microphone button in the chat input bar. Tap it, speak, and it transcribes via the browser's Web Speech API — same as voice-to-text on any other app.
+
+- Works on Chrome, Edge, Safari (desktop and mobile)
+- No extra setup or server-side component needed
+- The microphone icon appears in the message input box
+
+> Enable it in **Settings → Voice** within Open WebUI if it doesn't appear by default.
 
 ---
 
-## Part 5 — Sharing on the Home Network
+## Part 6 — Managing Docker from Windows (Portainer)
 
-The setup script prints your server's LAN IP at the end. To find it again:
+Portainer runs as part of the stack and gives you a browser-based Docker management UI — no need to SSH in for day-to-day tasks.
+
+Open from your Windows PC: **`http://<server-IP>:9000`**
+
+From Portainer you can:
+- See all containers and their status
+- Restart or stop individual containers
+- Browse container logs in real time
+- Pull new images / update containers
+
+---
+
+## Part 7 — Azure Monitoring (Sentinel)
+
+Ships SSH auth events, sudo logs, and firewall activity to your existing Sentinel workspace via Azure Arc + Azure Monitor Agent.
+
+### Step 1 — Onboard the server to Azure Arc
+
+On the **Linux server**:
 
 ```bash
-hostname -I
+export SUBSCRIPTION_ID="your-subscription-id"
+export RESOURCE_GROUP="rg-home-llm"        # create this RG in Azure first if needed
+export TENANT_ID="your-tenant-id"
+export LOCATION="uksouth"
+export MACHINE_NAME="home-llm-server"
+
+chmod +x monitoring/onboard-arc.sh
+./monitoring/onboard-arc.sh
 ```
 
-Give her the URL: `http://192.168.x.x:3000`
+A device-login URL will appear — open it on any device to authenticate.
 
-Any device on your home Wi-Fi can reach it. She signs in with Google and installs it as a PWA (above).
+### Step 2 — Deploy the DCR and install AMA
+
+On your **Windows PC**:
+
+```powershell
+cd ollama/
+
+.\monitoring\deploy-dcr.ps1 `
+    -SubscriptionId   "your-subscription-id" `
+    -ResourceGroupName "rg-home-llm" `
+    -WorkspaceName    "your-workspace-name" `
+    -ArcMachineName   "home-llm-server" `
+    -Location         "uksouth"
+```
+
+This deploys `monitoring/dcr-template.json` which:
+- Creates a Data Collection Rule collecting `auth`/`authpriv` (SSH, sudo), `daemon` (Docker), and `kern` (UFW firewall) syslog facilities
+- Associates the DCR with the Arc machine
+- Installs the Azure Monitor Agent extension
+
+### Verify in Sentinel
+
+Logs appear in the `Syslog` table within ~5 minutes:
+
+```kql
+Syslog
+| where Computer == "home-llm-server"
+| where Facility in ("auth", "authpriv")
+| order by TimeGenerated desc
+| take 50
+```
+
+Useful analytics rules to enable in Sentinel:
+- **Failed SSH brute force** — built-in rule, detects multiple failures from a single IP
+- **Successful login after brute force** — correlation rule
+- **Sudo privilege escalation** — search for `COMMAND` in auth syslog
+
+---
+
+## Part 8 — Remote Access from School (Phase 2)
+
+Two options — pick based on your Azure licensing.
+
+### Option A: Microsoft Entra Application Proxy (recommended if you have Entra P1)
+
+Runs a connector on the server that calls out to Microsoft — no inbound ports, full Entra ID authentication and Conditional Access in front of the WebUI, and all access events flow directly into Sentinel.
+
+Requires: **Microsoft Entra ID P1** (included in Microsoft 365 Business Premium / E3/E5).
+
+Setup:
+1. In Entra admin centre: **Applications → Enterprise Applications → New application → On-premises application**
+2. Set the internal URL to `http://localhost:3000`
+3. Download and install the **Application Proxy Connector** on the Linux server
+4. Assign your wife's account to the app
+5. Add the generated `https://` URL to Google OAuth **Authorised redirect URIs**
+
+She gets an `https://` URL she can open from anywhere, protected by her Entra/Microsoft login and any Conditional Access policies you apply.
+
+### Option B: Cloudflare Tunnel (free, no license needed)
+
+Uncomment the `cloudflared` service in `docker-compose.yml`, then:
+
+1. Free account at [cloudflare.com](https://cloudflare.com)
+2. **Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared**
+3. Copy the token, set tunnel to route to `http://open-webui:8080`
+4. Add `CLOUDFLARE_TUNNEL_TOKEN=<token>` to `.env`
+5. Add the new `https://` URL to your Google OAuth **Authorised redirect URIs**
+6. `docker compose up -d`
 
 ---
 
 ## Day-to-Day Commands
 
-| Task | Command |
+| Task | Command (on server) |
 |---|---|
 | Start the stack | `docker compose up -d` |
 | Stop the stack | `docker compose down` |
-| Restart after config change | `docker compose restart open-webui` |
-| View logs | `docker logs open-webui` or `docker logs ollama` |
-| Pull another model | `docker exec ollama ollama pull <model>` |
+| Restart WebUI only | `docker compose restart open-webui` |
+| View logs | `docker logs open-webui` / `docker logs ollama` |
+| Pull a model | `docker exec ollama ollama pull <model>` |
 | List models | `docker exec ollama ollama list` |
-| Remove a model | `docker exec ollama ollama rm <model>` |
+| Check what's running on GPU | `docker exec ollama ollama ps` |
 
 ### Models your 3060 (12GB VRAM) can run
 
 | Model | VRAM | Speed | Good for |
 |---|---|---|---|
-| `llama3.1:8b` | ~5 GB | Fast | General chat, Q&A, writing (already installed) |
+| `llama3.1:8b` | ~5 GB | Fast | General chat, Q&A, writing (installed by default) |
 | `mistral:7b` | ~4.5 GB | Fast | General use, instructions |
 | `gemma2:9b` | ~5.5 GB | Fast | Reasoning, following instructions |
-| `llama3.1:13b` | ~8 GB | Moderate | Noticeably smarter, still fits on GPU |
+| `llama3.1:13b` | ~8 GB | Moderate | Noticeably smarter, still fits entirely on GPU |
 | `phi3:mini` | ~2.3 GB | Very fast | Quick answers, low footprint |
-
-Pull any with:
-```bash
-docker exec ollama ollama pull llama3.1:13b
-```
-
----
-
-## Part 6 — Remote Access from School (Phase 2)
-
-When you're ready for her to access it outside the home network, use a **Cloudflare Tunnel** — no port forwarding, no router changes, and she gets a stable `https://` URL.
-
-Add to `docker-compose.yml`:
-
-```yaml
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    command: tunnel --no-autoupdate run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - open-webui
-    restart: unless-stopped
-```
-
-Add to `.env`:
-```
-CLOUDFLARE_TUNNEL_TOKEN=<your-token>
-```
-
-To get a token:
-1. Free account at [cloudflare.com](https://cloudflare.com)
-2. **Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared**
-3. Copy the token, set tunnel to route to `http://open-webui:8080`
-4. Add the new `https://` URL to your Google OAuth **Authorised redirect URIs**
-
-Then restart: `docker compose up -d`
 
 ---
 
 ## Troubleshooting
 
-**Check GPU is being used:**
+**GPU not being used:**
 ```bash
 docker exec ollama ollama ps
-# Should show model on GPU. If it says CPU, check nvidia-smi runs and Container Toolkit is installed.
+# If shows CPU: verify nvidia-smi works and NVIDIA Container Toolkit is installed
 ```
 
-**Can't reach from another device:**
+**Can't reach WebUI from another device on LAN:**
 ```bash
-sudo ufw allow 3000/tcp   # if ufw firewall is active
+sudo ufw status          # check port 3000 is allowed from your LAN subnet
+sudo ufw allow from 192.168.0.0/16 to any port 3000 proto tcp
 ```
 
-**Logs:**
+**Container logs:**
 ```bash
 docker logs open-webui
 docker logs ollama
+docker logs portainer
 ```
 
-**Google sign-in not showing:**
-- Check `.env` has `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` set (no quotes, no spaces)
+**Google sign-in not appearing:**
+- Check `.env` has `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (no quotes, no extra spaces)
 - `docker compose restart open-webui`
+
+**fail2ban status (check if your own IP got banned):**
+```bash
+sudo fail2ban-client status sshd
+sudo fail2ban-client set sshd unbanip <your-ip>
+```

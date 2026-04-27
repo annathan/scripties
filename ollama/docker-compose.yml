@@ -36,6 +36,28 @@ services:
       - webui_data:/app/backend/data
     restart: unless-stopped
 
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    restart: unless-stopped
+
+  # Cloudflare Tunnel — uncomment and set CLOUDFLARE_TUNNEL_TOKEN in .env for school access
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: cloudflared
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on:
+  #     - open-webui
+  #   restart: unless-stopped
+
 volumes:
   ollama_data:
   webui_data:
+  portainer_data:
