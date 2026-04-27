@@ -15,8 +15,9 @@ A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-li
 4. System prompt          → paste system-prompt.txt into Admin Panel
 5. Google sign-in         → .env + Google Cloud Console
 6. Install as an app      → PWA in Chrome/Safari
-7. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
-8. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
+7. Web search             → SearXNG (already in stack, enable in Admin Panel)
+8. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
+9. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
 ```
 
 ---
@@ -136,6 +137,7 @@ The split means the tone is consistent for both of you, but her professional con
 
 ## Part 5 — Google Sign-In
 
+
 Open WebUI supports Google OAuth — sign in with your Google accounts, no separate passwords.
 
 ### One-time setup (~5 minutes)
@@ -161,7 +163,7 @@ Open WebUI supports Google OAuth — sign in with your Google accounts, no separ
 
 ---
 
-## Part 5 — Use it Like an App + Voice Input
+## Part 6 — Use it Like an App + Voice Input
 
 Open WebUI is a **Progressive Web App (PWA)** — install it as a standalone app with its own icon and no browser bar.
 
@@ -188,7 +190,27 @@ Open WebUI has a built-in microphone button in the chat input bar. Tap it, speak
 
 ---
 
-## Part 6 — Managing Docker from Windows (Portainer)
+## Part 7 — Web Search (SearXNG)
+
+SearXNG is already in the Docker stack — it's a self-hosted meta-search engine that queries Google, Bing, DuckDuckGo, and Wikipedia on your behalf. Nothing leaves the house with your identity attached.
+
+### Enable it in Open WebUI (one-time)
+
+1. Sign in as admin, go to **Admin Panel → Settings → Web Search**
+2. Toggle **Enable Web Search** on
+3. Set **Web Search Engine** to `searxng`
+4. Set the URL to `http://searxng:8080`
+5. Save
+
+### Using it
+
+A search toggle button appears in the chat input bar. When active, the model fetches live results and works them into its answer — useful for anything time-sensitive or requiring current information that isn't in its training data.
+
+> Google Scholar is included as an engine, weighted higher — handy for Jess when researching evidence-based learning support strategies.
+
+---
+
+## Part 8 — Managing Docker from Windows (Portainer)
 
 Portainer runs as part of the stack and gives you a browser-based Docker management UI — no need to SSH in for day-to-day tasks.
 
@@ -202,7 +224,7 @@ From Portainer you can:
 
 ---
 
-## Part 7 — Azure Monitoring (Sentinel)
+## Part 9 — Azure Monitoring (Sentinel)
 
 Ships SSH auth events, sudo logs, and firewall activity to your existing Sentinel workspace via Azure Arc + Azure Monitor Agent.
 
@@ -262,7 +284,7 @@ Useful analytics rules to enable in Sentinel:
 
 ---
 
-## Part 8 — Remote Access from School (Phase 2)
+## Part 10 — Remote Access from School (Phase 2)
 
 Two options — pick based on your Azure licensing.
 

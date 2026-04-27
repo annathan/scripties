@@ -38,6 +38,16 @@ services:
       - webui_data:/app/backend/data
     restart: unless-stopped
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY}
+    restart: unless-stopped
+    # No external port — only open-webui needs to reach it internally
+
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer

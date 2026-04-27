@@ -52,7 +52,7 @@ if [[ ! -f .env ]]; then
 fi
 
 if grep -q "change-this-to-a-random-string" .env; then
-    fail "WEBUI_SECRET_KEY is still the placeholder. Edit $SCRIPT_DIR/.env first."
+    fail "Secret keys are still placeholders. Edit $SCRIPT_DIR/.env and set real values for WEBUI_SECRET_KEY and SEARXNG_SECRET_KEY."
 fi
 ok ".env looks good"
 
