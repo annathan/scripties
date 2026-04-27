@@ -12,10 +12,11 @@ A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-li
 1. Install Ubuntu         → ubuntu install + NVIDIA drivers
 2. Harden the server      → harden.sh
 3. Start the stack        → setup.sh
-4. Google sign-in         → .env + Google Cloud Console
-5. Install as an app      → PWA in Chrome/Safari
-6. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
-7. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
+4. System prompt          → paste system-prompt.txt into Admin Panel
+5. Google sign-in         → .env + Google Cloud Console
+6. Install as an app      → PWA in Chrome/Safari
+7. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
+8. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
 ```
 
 ---
@@ -101,7 +102,39 @@ Re-run `./setup.sh` after saving.
 
 ---
 
-## Part 4 — Google Sign-In
+## Part 4 — System Prompt (Tone + Context)
+
+This is the single most impactful config change — it tells the model how to behave in every conversation before anyone types a word.
+
+The file `system-prompt.txt` in this folder contains tone and style rules only — the things that should apply globally to every conversation:
+- No "Certainly!", "Great question!", "Absolutely!" openers
+- No reframe correction structure ("It's not X, it's really Y")
+- Natural, conversational tone throughout
+- Plain language, no AI padding
+
+It deliberately contains **no context about who the users are or what they do** — that's personal to each user and they should build it themselves (see below).
+
+### Applying the global tone prompt
+
+1. Open `http://<server-IP>:3000` and sign in as admin
+2. **Admin Panel → Settings → Interface → Default System Prompt**
+3. Paste the contents of `system-prompt.txt` and save
+
+### Jess builds her own context
+
+Open WebUI has two ways for a user to add personal context — and Jess should do this herself so it reflects how she actually works:
+
+**Memory (builds over time):** In **Settings → Personalization → Memory**, she can tell it things once and they stick across all future conversations — her role, the year groups she supports, how she likes explanations pitched. The model also accumulates facts as she chats, so it gets more useful the more she uses it.
+
+**User system prompt (her permanent context):** In **Settings → Personalization → System Prompt**, she can write a short note about herself — e.g. "I'm a School Learning Support Officer working with Years 7–12, including students with learning difficulties." This gets prepended to every conversation she has, on top of the global tone rules.
+
+The split means the tone is consistent for both of you, but her professional context is hers to own and refine over time.
+
+> You can also set per-model overrides in **Admin Panel → Models** if you ever want one model to behave differently from another.
+
+---
+
+## Part 5 — Google Sign-In
 
 Open WebUI supports Google OAuth — sign in with your Google accounts, no separate passwords.
 
