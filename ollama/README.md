@@ -280,7 +280,7 @@ On the **Linux server**:
 export SUBSCRIPTION_ID="your-subscription-id"
 export RESOURCE_GROUP="rg-home-llm"        # create this RG in Azure first if needed
 export TENANT_ID="your-tenant-id"
-export LOCATION="uksouth"
+export LOCATION="australiaeast"
 export MACHINE_NAME="home-llm-server"
 
 chmod +x monitoring/onboard-arc.sh
@@ -301,7 +301,7 @@ cd ollama/
     -ResourceGroupName "rg-home-llm" `
     -WorkspaceName    "your-workspace-name" `
     -ArcMachineName   "home-llm-server" `
-    -Location         "uksouth"
+    -Location         "australiaeast"
 ```
 
 This deploys `monitoring/dcr-template.json` which:

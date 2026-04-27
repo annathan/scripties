@@ -11,7 +11,7 @@ param(
     [Parameter(Mandatory)] [string] $ResourceGroupName,
     [Parameter(Mandatory)] [string] $WorkspaceName,
     [Parameter(Mandatory)] [string] $ArcMachineName,
-    [string] $Location       = "uksouth",
+    [string] $Location       = "australiaeast",
     [string] $DcrName        = "dcr-home-llm-server"
 )
 

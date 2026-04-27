@@ -19,7 +19,7 @@ fail()  { echo -e "    \033[0;31mERROR: $*\033[0m"; exit 1; }
 # ── Config — fill these in ────────────────────────────────────────────────────
 SUBSCRIPTION_ID="${SUBSCRIPTION_ID:-}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-}"
-LOCATION="${LOCATION:-uksouth}"
+LOCATION="${LOCATION:-australiaeast}"
 TENANT_ID="${TENANT_ID:-}"
 # Optional: tag the machine in Azure
 MACHINE_NAME="${MACHINE_NAME:-home-llm-server}"
@@ -30,7 +30,7 @@ if [[ -z "$SUBSCRIPTION_ID" || -z "$RESOURCE_GROUP" || -z "$TENANT_ID" ]]; then
     echo "  export SUBSCRIPTION_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
     echo "  export RESOURCE_GROUP=rg-home-llm"
     echo "  export TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    echo "  export LOCATION=uksouth    # change to your region"
+    echo "  export LOCATION=australiaeast    # change to your region"
     echo "  export MACHINE_NAME=home-llm-server"
     exit 1
 fi
