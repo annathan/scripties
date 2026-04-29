@@ -23,6 +23,7 @@ Setup:
 import os
 import re
 import sys
+import time
 import argparse
 import logging
 from collections import Counter
@@ -44,6 +45,24 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# API helpers
+# ---------------------------------------------------------------------------
+
+def execute_with_retry(request, max_attempts: int = 5):
+    """Execute a Gmail API request with exponential backoff on 429/5xx errors."""
+    for attempt in range(max_attempts):
+        try:
+            return request.execute()
+        except HttpError as exc:
+            if exc.resp.status in (429, 500, 503) and attempt < max_attempts - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s, 8s
+                log.warning("HTTP %d — retrying in %ds ...", exc.resp.status, wait)
+                time.sleep(wait)
+            else:
+                raise
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +88,7 @@ def authenticate():
             creds = flow.run_local_server(port=0)
         with open(TOKEN_FILE, "w") as fh:
             fh.write(creds.to_json())
+        os.chmod(TOKEN_FILE, 0o600)
     return build("gmail", "v1", credentials=creds)
 
 
@@ -157,7 +177,7 @@ def list_messages(service, query: str, limit: int = 0) -> list:
     ids = []
     kwargs = {"userId": "me", "q": query, "maxResults": 500}
     while True:
-        resp = service.users().messages().list(**kwargs).execute()
+        resp = execute_with_retry(service.users().messages().list(**kwargs))
         for msg in resp.get("messages", []):
             ids.append(msg["id"])
         if limit and len(ids) >= limit:
@@ -182,12 +202,16 @@ def batch_get_senders(service, message_ids: list) -> list:
 
         def make_callback(msg_id):
             def callback(request_id, response, exception):
-                if exception is None and response:
+                if exception is not None:
+                    log.warning("Batch fetch failed for message %s: %s", msg_id, exception)
+                    return
+                if response:
                     headers = response.get("payload", {}).get("headers", [])
                     for h in headers:
                         if h["name"].lower() == "from":
                             chunk_results[msg_id] = h["value"]
-                            break
+                            return
+                    log.debug("No From header for message %s", msg_id)
             return callback
 
         batch = service.new_batch_http_request()
@@ -201,7 +225,7 @@ def batch_get_senders(service, message_ids: list) -> list:
                 ),
                 callback=make_callback(msg_id),
             )
-        batch.execute()
+        execute_with_retry(batch)
         senders.extend(chunk_results.get(mid, "") for mid in chunk)
         log.info(
             "  Fetched metadata: %d / %d",
@@ -210,15 +234,6 @@ def batch_get_senders(service, message_ids: list) -> list:
         )
 
     return senders
-
-
-def parse_domain(from_header: str) -> str:
-    """Extract the sender domain from a raw From header value."""
-    match = re.search(r"<([^>]+)>", from_header)
-    email = match.group(1) if match else from_header.strip()
-    if "@" in email:
-        return email.split("@", 1)[1].lower().strip()
-    return ""
 
 
 def batch_delete(service, message_ids: list, dry_run: bool) -> int:
@@ -231,29 +246,36 @@ def batch_delete(service, message_ids: list, dry_run: bool) -> int:
     total = 0
     for i in range(0, len(message_ids), 1000):
         chunk = message_ids[i: i + 1000]
-        service.users().messages().batchDelete(
+        execute_with_retry(service.users().messages().batchDelete(
             userId="me", body={"ids": chunk}
-        ).execute()
+        ))
         total += len(chunk)
         log.info("  Deleted %d / %d messages ...", total, len(message_ids))
     return total
 
 
+_label_cache: dict = {}  # name.lower() → label_id, populated once per run
+
+
 def ensure_label(service, name: str) -> str:
-    """Return the label ID for `name`, creating it if it doesn't exist."""
-    resp = service.users().labels().list(userId="me").execute()
-    for lbl in resp.get("labels", []):
-        if lbl["name"].lower() == name.lower():
-            return lbl["id"]
-    created = service.users().labels().create(
+    """Return the label ID for `name`, creating it if needed. Caches the label list."""
+    global _label_cache
+    if not _label_cache:
+        resp = execute_with_retry(service.users().labels().list(userId="me"))
+        for lbl in resp.get("labels", []):
+            _label_cache[lbl["name"].lower()] = lbl["id"]
+    if name.lower() in _label_cache:
+        return _label_cache[name.lower()]
+    created = execute_with_retry(service.users().labels().create(
         userId="me",
         body={
             "name": name,
             "labelListVisibility": "labelShow",
             "messageListVisibility": "show",
         },
-    ).execute()
+    ))
     log.info("  Created label: %s", name)
+    _label_cache[name.lower()] = created["id"]
     return created["id"]
 
 
@@ -267,14 +289,14 @@ def apply_label_and_archive(service, message_ids: list, label_id: str, dry_run: 
     total = 0
     for i in range(0, len(message_ids), 1000):
         chunk = message_ids[i: i + 1000]
-        service.users().messages().batchModify(
+        execute_with_retry(service.users().messages().batchModify(
             userId="me",
             body={
                 "ids": chunk,
                 "addLabelIds": [label_id],
                 "removeLabelIds": ["INBOX"],
             },
-        ).execute()
+        ))
         total += len(chunk)
     return total
 
@@ -283,35 +305,61 @@ def apply_label_and_archive(service, message_ids: list, label_id: str, dry_run: 
 # Operations
 # ---------------------------------------------------------------------------
 
+def log_dry_run_sample(service, message_ids: list, n: int = 5) -> None:
+    """Log From/Subject for the first N messages so users can verify before --execute."""
+    log.info("  Sample (first %d):", min(n, len(message_ids)))
+    for msg_id in message_ids[:n]:
+        try:
+            resp = execute_with_retry(service.users().messages().get(
+                userId="me", id=msg_id, format="metadata",
+                metadataHeaders=["From", "Subject"],
+            ))
+            hdrs = {h["name"].lower(): h["value"]
+                    for h in resp.get("payload", {}).get("headers", [])}
+            log.info("    from=%-40s  subject=%s",
+                     hdrs.get("from", "(none)")[:40],
+                     hdrs.get("subject", "(none)")[:80])
+        except HttpError:
+            pass
+
+
+# Appended to every delete query to protect emails the user has deliberately kept.
+SAFE_EXCLUDE = "-is:starred -is:important -label:drafts"
+
+
 def delete_old_emails(service, days: int, dry_run: bool) -> int:
-    """Delete all emails older than `days` days."""
+    """Delete all emails older than `days` days (skips starred/important/drafts)."""
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y/%m/%d")
-    query = f"before:{cutoff}"
+    query = f"before:{cutoff} {SAFE_EXCLUDE}"
     log.info("Querying emails older than %d days (before %s)...", days, cutoff)
     ids = list_messages(service, query)
     log.info("Found %d old emails", len(ids))
+    if dry_run and ids:
+        log_dry_run_sample(service, ids)
     return batch_delete(service, ids, dry_run)
 
 
-# Queries that reliably catch promotional/newsletter emails in Gmail
+# Gmail native categories are precise; free-text "unsubscribe" was too broad
+# (it matched bank/service emails saying "manage your account preferences").
 PROMO_QUERIES = [
     "category:promotions",
     "category:updates",
     "label:^smartlabel_newsletter",
     "label:^smartlabel_notification",
-    '"unsubscribe" OR "opt out" OR "manage preferences"',
 ]
 
 
 def delete_promotional_emails(service, dry_run: bool) -> int:
-    """Delete promotional, newsletter, and bulk marketing emails."""
+    """Delete promotional, newsletter, and bulk marketing emails (skips starred/important/drafts)."""
     seen: set = set()
     for q in PROMO_QUERIES:
         log.info("Querying: %s", q)
-        ids = list_messages(service, q)
+        ids = list_messages(service, f"{q} {SAFE_EXCLUDE}")
         log.info("  → %d messages", len(ids))
         seen.update(ids)
     log.info("Total unique promotional emails: %d", len(seen))
+    if dry_run and seen:
+        log_dry_run_sample(service, list(seen))
     return batch_delete(service, list(seen), dry_run)
 
 
@@ -337,11 +385,11 @@ LABEL_RULES = [
     },
     {
         "label": "Notifications/GitHub",
-        "query": "in:inbox from:notifications@github.com",
+        "query": "in:inbox from:github.com",
     },
     {
         "label": "Notifications/Jira",
-        "query": "in:inbox (from:jira OR from:atlassian.com OR from:atlassian.net)",
+        "query": "in:inbox (from:atlassian.com OR from:atlassian.net)",
     },
     {
         "label": "Social",
@@ -373,12 +421,11 @@ def suggest_labels(service, max_emails: int = 2000, min_count: int = 3) -> None:
     for raw in raw_senders:
         if not raw:
             continue
-        domain = parse_domain(raw)
+        match = re.search(r"<([^>]+)>", raw)
+        sender_email = (match.group(1) if match else raw.strip()).lower()
+        domain = sender_email.split("@", 1)[1] if "@" in sender_email else ""
         if domain:
             domain_counts[domain] += 1
-        # Also track the full sender for display
-        match = re.search(r"<([^>]+)>", raw)
-        sender_email = match.group(1).lower() if match else raw.strip().lower()
         sender_counts[sender_email] += 1
 
     # --- Table 1: known domains with suggested labels ---
