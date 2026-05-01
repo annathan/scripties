@@ -1,0 +1,140 @@
+# Water leak sensor automations
+# Entity assumptions (rename in HA UI to match these after pairing):
+#   binary_sensor.leak_kitchen_sink
+#   binary_sensor.leak_laundry
+#   binary_sensor.leak_dishwasher
+#   binary_sensor.leak_bathroom_sink
+#   binary_sensor.leak_water_heater
+#   binary_sensor.leak_pool_equipment     (add when pool is installed)
+#   switch.main_water_valve               (optional: Shelly valve actuator on mains)
+#
+# Zigbee sensors to buy: SONOFF SNZB-04W, Aqara Water Leak Sensor (both ~$12-15)
+
+# ── Leak detected: critical alert to all household members ───────────────────
+
+- alias: "Water Leak - Alert on detection"
+  id: water_leak_alert
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.leak_kitchen_sink
+        - binary_sensor.leak_laundry
+        - binary_sensor.leak_dishwasher
+        - binary_sensor.leak_bathroom_sink
+        - binary_sensor.leak_water_heater
+        - binary_sensor.leak_pool_equipment
+      to: "on"
+  action:
+    - service: notify.notify
+      data:
+        title: "🚨 WATER LEAK DETECTED"
+        message: >
+          Leak sensor triggered: {{ trigger.to_state.attributes.friendly_name }}.
+          Check immediately.
+        data:
+          push:
+            interruption-level: critical   # bypasses silent mode on iOS
+          ttl: 0
+          priority: high
+    - service: persistent_notification.create
+      data:
+        title: "Water Leak"
+        message: >
+          {{ now().strftime('%H:%M %d/%m/%Y') }} —
+          {{ trigger.to_state.attributes.friendly_name }} triggered.
+        notification_id: water_leak_active
+
+# ── Leak active: repeat alert every 5 minutes until cleared ──────────────────
+
+- alias: "Water Leak - Repeat alert while active"
+  id: water_leak_repeat_alert
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.leak_kitchen_sink
+        - binary_sensor.leak_laundry
+        - binary_sensor.leak_dishwasher
+        - binary_sensor.leak_bathroom_sink
+        - binary_sensor.leak_water_heater
+        - binary_sensor.leak_pool_equipment
+      to: "on"
+      for: "00:05:00"
+  action:
+    - repeat:
+        while:
+          - condition: state
+            entity_id: "{{ trigger.entity_id }}"
+            state: "on"
+        sequence:
+          - service: notify.notify
+            data:
+              title: "🚨 LEAK STILL ACTIVE"
+              message: >
+                {{ trigger.to_state.attributes.friendly_name }} is still wet.
+                Shut off water if you haven't already.
+              data:
+                push:
+                  interruption-level: critical
+          - delay: "00:05:00"
+
+# ── Auto-shutoff: close main water valve if leak detected and nobody home ─────
+# Requires a smart valve actuator (e.g. Shelly Valve, Aquatermo) on the mains.
+# Comment out if you don't have a smart valve.
+
+- alias: "Water Leak - Auto-close mains valve when nobody home"
+  id: water_leak_auto_shutoff
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.leak_kitchen_sink
+        - binary_sensor.leak_laundry
+        - binary_sensor.leak_dishwasher
+        - binary_sensor.leak_bathroom_sink
+        - binary_sensor.leak_water_heater
+        - binary_sensor.leak_pool_equipment
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: person.alice
+      state: "not_home"
+    - condition: state
+      entity_id: person.bob
+      state: "not_home"
+  action:
+    - service: switch.turn_off           # closes the valve (check your actuator's logic)
+      target:
+        entity_id: switch.main_water_valve
+    - service: notify.notify
+      data:
+        title: "🚰 Mains water shut off"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name }} triggered while nobody
+          was home. Main water valve has been closed automatically.
+        data:
+          push:
+            interruption-level: critical
+
+# ── Cleared: confirm when sensor returns to dry ───────────────────────────────
+
+- alias: "Water Leak - Cleared notification"
+  id: water_leak_cleared
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.leak_kitchen_sink
+        - binary_sensor.leak_laundry
+        - binary_sensor.leak_dishwasher
+        - binary_sensor.leak_bathroom_sink
+        - binary_sensor.leak_water_heater
+        - binary_sensor.leak_pool_equipment
+      to: "off"
+  action:
+    - service: notify.notify
+      data:
+        title: "✅ Leak sensor cleared"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name }} is now dry.
+          Remember to re-open the main valve if it was shut.
+    - service: persistent_notification.dismiss
+      data:
+        notification_id: water_leak_active

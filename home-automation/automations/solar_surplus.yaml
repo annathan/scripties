@@ -1,0 +1,244 @@
+# Solar surplus routing automations — GoodWe GW5000-DNS-30
+#
+# Key GoodWe entities (verify names in your HA after integration setup):
+#   sensor.goodwe_pv_power        — total solar production (W)
+#   sensor.goodwe_grid_power      — positive = importing, negative = exporting (W)
+#
+# Surplus = how much you're currently exporting to the grid.
+# These automations redirect that surplus into useful loads instead.
+#
+# Threshold helpers (adjustable from dashboard) are in packages/helpers.yaml.
+# A 5-minute sustain period is required before acting to avoid cloud-flicker toggling.
+#
+# Optional load entities (comment out anything you don't have yet):
+#   switch.hot_water_boost           — Shelly 1 on immersion heater or heat pump
+#   switch.pool_pump_high_speed      — ESPHome pool pump speed control
+#   switch.ev_charger                — OCPP charger or simple Shelly on EVSE
+
+# ── Template sensor: calculated surplus in watts ──────────────────────────────
+# Add this block to a template.yaml or your packages/ directory.
+# It inverts grid_power so positive = surplus being exported.
+#
+# template:
+#   - sensor:
+#       - name: "Solar Surplus"
+#         unit_of_measurement: "W"
+#         device_class: power
+#         state: >
+#           {% set grid = states('sensor.goodwe_grid_power') | float(0) %}
+#           {{ [grid * -1, 0] | max | round(0) }}
+
+# ── Tier 1 (>= 1 kW surplus): hot water boost ─────────────────────────────────
+
+- alias: "Solar - Enable hot water boost on surplus"
+  id: solar_hot_water_boost_on
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.goodwe_grid_power
+      below: -1000          # exporting > 1kW (grid_power is negative when exporting)
+      for: "00:05:00"
+  condition:
+    - condition: state
+      entity_id: input_boolean.solar_surplus_automations_enabled
+      state: "on"
+    - condition: state
+      entity_id: switch.hot_water_boost
+      state: "off"
+    - condition: time
+      after: "07:00:00"
+      before: "16:00:00"   # only during solar hours
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.hot_water_boost
+    - service: notify.notify
+      data:
+        title: "☀️ Hot water boost ON"
+        message: >
+          Solar surplus over 1 kW — boosting hot water.
+          Currently producing {{ states('sensor.goodwe_pv_power') }} W.
+
+- alias: "Solar - Disable hot water boost when surplus drops"
+  id: solar_hot_water_boost_off
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.goodwe_grid_power
+      above: -800           # surplus dropped below 800W (with 200W hysteresis)
+      for: "00:05:00"
+  condition:
+    - condition: state
+      entity_id: switch.hot_water_boost
+      state: "on"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.hot_water_boost
+    - service: notify.notify
+      data:
+        title: "☁️ Hot water boost OFF"
+        message: "Solar surplus dropped — hot water boost turned off."
+
+# ── Tier 2 (>= 2 kW surplus): pool pump high speed ───────────────────────────
+
+- alias: "Solar - Run pool pump at full speed on surplus"
+  id: solar_pool_pump_high_on
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.goodwe_grid_power
+      below: -2000
+      for: "00:05:00"
+  condition:
+    - condition: state
+      entity_id: input_boolean.solar_surplus_automations_enabled
+      state: "on"
+    - condition: state
+      entity_id: switch.pool_pump_high_speed
+      state: "off"
+    - condition: time
+      after: "07:00:00"
+      before: "16:00:00"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.pool_pump_high_speed
+    - service: notify.notify
+      data:
+        title: "☀️ Pool pump — full speed"
+        message: >
+          Solar surplus over 2 kW — running pool pump at full speed.
+
+- alias: "Solar - Return pool pump to normal speed when surplus drops"
+  id: solar_pool_pump_high_off
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.goodwe_grid_power
+      above: -1700          # 300W hysteresis
+      for: "00:05:00"
+  condition:
+    - condition: state
+      entity_id: switch.pool_pump_high_speed
+      state: "on"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.pool_pump_high_speed
+
+# ── Tier 3 (>= 3 kW surplus): EV charger ────────────────────────────────────
+# Two options — pick one:
+#   A. Simple on/off (Shelly on EVSE): uncomment switch.turn_on block
+#   B. OCPP charger (Wallbox, Easee): set charging current via number.set_value
+#
+# This automation sends a push notification first so you can decide whether
+# to plug in. Remove the notify action and uncomment the switch/OCPP action
+# for fully automatic EV charging.
+
+- alias: "Solar - Notify EV surplus available"
+  id: solar_ev_surplus_notify
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.goodwe_grid_power
+      below: -3000
+      for: "00:05:00"
+  condition:
+    - condition: state
+      entity_id: input_boolean.solar_surplus_automations_enabled
+      state: "on"
+    - condition: time
+      after: "07:00:00"
+      before: "16:00:00"
+  action:
+    - service: notify.notify
+      data:
+        title: "⚡ EV surplus available"
+        message: >
+          Solar exporting over 3 kW to the grid.
+          Good time to plug in the car.
+          Production: {{ states('sensor.goodwe_pv_power') }} W
+
+    # Option A — uncomment to auto-enable a simple EVSE switch:
+    # - service: switch.turn_on
+    #   target:
+    #     entity_id: switch.ev_charger
+
+    # Option B — uncomment for OCPP charger current control (e.g. Wallbox):
+    # - service: number.set_value
+    #   target:
+    #     entity_id: number.ev_charger_current
+    #   data:
+    #     value: >
+    #       {% set surplus_w = (states('sensor.goodwe_grid_power') | float * -1) %}
+    #       {{ [[(surplus_w / 230) | int, 6] | max, 16] | min }}
+
+- alias: "Solar - Stop EV charging when surplus drops"
+  id: solar_ev_surplus_off
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.goodwe_grid_power
+      above: -2700          # 300W hysteresis
+      for: "00:05:00"
+  condition:
+    # Only runs if you've enabled the auto-switch option above
+    - condition: state
+      entity_id: switch.ev_charger
+      state: "on"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.ev_charger
+    - service: notify.notify
+      data:
+        title: "⚡ EV charging paused"
+        message: "Solar surplus dropped below threshold — EV charger paused."
+
+# ── Evening: ensure all surplus loads are off after solar drops ───────────────
+
+- alias: "Solar - Turn off all surplus loads at sunset"
+  id: solar_surplus_loads_off_at_sunset
+  trigger:
+    - platform: sun
+      event: sunset
+      offset: "-00:30:00"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.hot_water_boost
+          - switch.pool_pump_high_speed
+          - switch.ev_charger
+
+# ── Appliance monitoring: washing machine / dryer done notification ───────────
+# Requires a Zigbee/WiFi smart plug with power monitoring on each appliance.
+# Entity: sensor.washing_machine_power (W)
+# Logic: was running (>5W) then drops to idle (<5W) = cycle finished.
+
+- alias: "Appliance - Washing machine finished"
+  id: appliance_washing_machine_done
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.washing_machine_power
+      below: 5
+      for: "00:02:00"
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.washing_machine_power
+      above: 5
+      # this condition checks the sensor was above 5W recently — use a history
+      # stats sensor or an input_boolean toggled at start of cycle for accuracy
+  action:
+    - service: notify.notify
+      data:
+        title: "🧺 Washing done"
+        message: "The washing machine has finished its cycle."
+
+- alias: "Appliance - Dryer finished"
+  id: appliance_dryer_done
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.dryer_power
+      below: 5
+      for: "00:02:00"
+  action:
+    - service: notify.notify
+      data:
+        title: "👕 Dryer done"
+        message: "The dryer has finished."

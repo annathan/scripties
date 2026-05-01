@@ -1,0 +1,20 @@
+# Home Assistant Person Configuration
+# Reference in configuration.yaml with:  person: !include persons.yaml
+#
+# Each person aggregates one or more device_trackers.
+# The HA Companion app (iOS/Android) auto-creates a device_tracker when
+# you log in — replace the entity IDs below with the real ones after setup.
+#
+# Companion app location settings to tune:
+#   Settings → Companion App → Location → Background refresh: Always
+#   Settings → Companion App → Location → Significant location change: ON
+
+- name: Alice
+  id: alice
+  device_trackers:
+    - device_tracker.alice_phone   # created by HA Companion app on Alice's phone
+
+- name: Bob
+  id: bob
+  device_trackers:
+    - device_tracker.bob_phone     # created by HA Companion app on Bob's phone

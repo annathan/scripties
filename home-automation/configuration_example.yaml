@@ -1,0 +1,54 @@
+# Home Assistant configuration.yaml — example structure
+# This shows how the files in this repo wire together.
+# Copy relevant sections into your actual HA configuration.yaml.
+
+homeassistant:
+  packages: !include_dir_named packages/   # loads packages/helpers.yaml, packages/eufy_lock.yaml etc.
+
+# Zones (home + approaching)
+zone: !include zones.yaml
+
+# Persons (aggregates device_tracker per person)
+person: !include persons.yaml
+
+# Automations (merged from all files in automations/)
+automation: !include_dir_merge_list automations/
+
+# MQTT — Mosquitto add-on auto-configures this; explicit entry only needed
+# if you're running an external broker.
+mqtt:
+  broker: localhost
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+
+# GoodWe solar inverter (local UDP, no cloud)
+# Configured via UI: Settings → Integrations → GoodWe
+# No yaml needed — stored in .storage/
+
+# ratgdo garage door
+# Auto-discovered via MQTT once ratgdo is connected to Mosquitto
+# Entity: cover.garage_door
+
+# Ring cameras / doorbell
+# Configured via UI: Settings → Integrations → Ring
+# Entity examples: binary_sensor.front_door_motion, camera.front_door
+
+# Blink cameras
+# Configured via UI: Settings → Integrations → Blink
+
+# Eufy lock
+# Configured via UI after eufy-security-ws bridge is running
+# See packages/eufy_lock.yaml for setup steps
+# Entity: lock.front_door
+
+# Zigbee (ZHA) — lights and switches
+# Configured via UI after plugging in Sonoff ZBDongle-E
+
+# Alarm control panel
+# Defined in packages/alarm.yaml — loaded automatically via packages/ include
+# Entity: alarm_control_panel.home_alarm
+
+# Camera snapshot directory — create this folder in your HA config:
+#   mkdir -p /config/www/snapshots
+# Snapshots are saved here by the alarm trigger automation.
