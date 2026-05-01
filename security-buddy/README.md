@@ -188,7 +188,7 @@ When you're ready to take real payments, create the same products in Paddle's **
 
 ### Step 4 — Load the extension (5 min)
 
-#### Chrome / Edge / Brave
+#### Chrome / Brave
 1. Generate the icon files first (one-time, requires Python):
    ```bash
    cd security-buddy/extension/icons
@@ -199,6 +199,19 @@ When you're ready to take real payments, create the same products in Paddle's **
 4. Click **Load unpacked**
 5. Select the `security-buddy/extension/` folder
 6. The Safety Buddy shield icon appears in your toolbar
+
+#### Edge
+Edge is Chromium-based and runs the extension identically to Chrome — all the same APIs are supported.
+
+1. Generate icons (same as above — skip if already done):
+   ```bash
+   cd security-buddy/extension/icons
+   python generate_icons.py
+   ```
+2. Open `edge://extensions` (not `chrome://extensions` — Edge has its own page)
+3. Turn on **Developer mode** (toggle bottom-left)
+4. Click **Load unpacked**
+5. Select the `security-buddy/extension/` folder
 
 #### Firefox
 1. Open `about:debugging`
