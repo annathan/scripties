@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from datetime import datetime, timedelta, timezone  # noqa: E402
+from urllib.parse import urlparse  # noqa: E402
+
 from fastapi import Depends, Header, HTTPException, Request, status  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -209,6 +212,29 @@ async def check_url_endpoint(
 # Notify  (Pro plan only)
 # ---------------------------------------------------------------------------
 
+def _hostname(url: str) -> str:
+    try:
+        return urlparse(url).hostname or url
+    except Exception:
+        return url
+
+
+async def _recently_alerted(
+    db: AsyncSession, user_id: str, url: str, minutes: int
+) -> bool:
+    """Return True if an alert was already sent for the same domain within `minutes`."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    result = await db.execute(
+        select(func.count(WarningEvent.id)).where(
+            WarningEvent.user_id == user_id,
+            WarningEvent.created_at >= cutoff,
+            WarningEvent.url.contains(_hostname(url)),
+        )
+    )
+    return result.scalar_one() > 0
+
+
+
 class NotifyRequest(BaseModel):
     url: str
     reason: str = ""
@@ -230,6 +256,9 @@ async def notify_endpoint(
 ):
     if not user.is_pro:
         return {"sent": False, "reason": "upgrade_required"}
+
+    if await _recently_alerted(db, user.id, req.url, minutes=30):
+        return {"sent": False, "reason": "throttled"}
 
     result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
     for g in result.scalars().all():
@@ -262,6 +291,9 @@ async def notify_urgent_endpoint(
 ):
     if not user.is_pro:
         return {"sent": False, "reason": "upgrade_required"}
+
+    if await _recently_alerted(db, user.id, req.url, minutes=5):
+        return {"sent": False, "reason": "throttled"}
 
     result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
     for g in result.scalars().all():

@@ -62,8 +62,15 @@ function hideCheckingSpinner() {
 }
 
 document.addEventListener('click', async (e) => {
+  // Only intercept plain left-clicks — let the browser handle everything else natively.
+  // Ctrl/Cmd = open in new tab, Shift = new window, Alt = save/download, button≠0 = middle/right.
+  if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+
   const a = e.target.closest('a[href]');
   if (!a) return;
+
+  // Let file downloads through — we're not checking content, just destinations.
+  if (a.hasAttribute('download')) return;
 
   let dest;
   try {
