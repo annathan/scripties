@@ -2,94 +2,230 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Safety Buddy Settings</title>
+  <title>Safety Buddy</title>
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: sans-serif;
-      width: 320px;
-      padding: 16px;
+      width: 340px;
       background: #f0f7ff;
-      margin: 0;
+      color: #222;
     }
-    h1 {
-      font-size: 20px;
-      color: #1565c0;
-      margin: 0 0 4px;
+    header {
+      background: #1565c0;
+      color: white;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    .subtitle {
-      font-size: 13px;
-      color: #555;
-      margin-bottom: 20px;
+    header h1 { font-size: 18px; font-weight: bold; flex: 1; }
+    .plan-badge {
+      font-size: 11px;
+      font-weight: bold;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.2);
+      letter-spacing: 0.5px;
     }
+    .plan-badge.pro { background: #ffd54f; color: #333; }
+
+    .section { padding: 16px; }
+    .section + .section { border-top: 1px solid #dce8f5; }
+
     label {
       display: block;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: bold;
-      color: #333;
-      margin-bottom: 4px;
+      color: #444;
+      margin-bottom: 5px;
     }
-    input {
+    input[type="text"], input[type="email"], input[type="password"], input[type="tel"] {
       width: 100%;
-      padding: 8px 10px;
+      padding: 9px 11px;
       font-size: 15px;
       border: 1px solid #bbb;
       border-radius: 6px;
-      box-sizing: border-box;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
+      background: white;
     }
-    input:focus {
-      outline: none;
-      border-color: #1565c0;
-    }
-    button {
+    input:focus { outline: none; border-color: #1565c0; }
+
+    .btn {
       width: 100%;
-      padding: 12px;
-      font-size: 16px;
+      padding: 11px;
+      font-size: 15px;
       font-weight: bold;
-      background: #1565c0;
-      color: white;
       border: none;
       border-radius: 8px;
       cursor: pointer;
+      margin-bottom: 8px;
     }
-    button:hover {
-      background: #0d47a1;
+    .btn-primary { background: #1565c0; color: white; }
+    .btn-primary:hover { background: #0d47a1; }
+    .btn-success { background: #2e7d32; color: white; }
+    .btn-success:hover { background: #1b5e20; }
+    .btn-outline {
+      background: white;
+      color: #1565c0;
+      border: 1.5px solid #1565c0;
     }
-    #status {
-      margin-top: 12px;
+    .btn-outline:hover { background: #e3f2fd; }
+    .btn-ghost {
+      background: transparent;
+      color: #888;
+      border: 1px solid #ddd;
+      font-size: 13px;
+      padding: 8px;
+    }
+    .btn-ghost:hover { background: #f5f5f5; color: #333; }
+    .btn-danger {
+      background: transparent;
+      color: #c62828;
+      border: none;
+      font-size: 13px;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .btn-danger:hover { background: #ffebee; }
+
+    .msg { font-size: 13px; text-align: center; min-height: 18px; margin-top: 4px; }
+    .msg.ok { color: #2e7d32; }
+    .msg.err { color: #c62828; }
+
+    .toggle-link {
       text-align: center;
+      font-size: 13px;
+      color: #1565c0;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+    .toggle-link:hover { text-decoration: underline; }
+
+    .hi { font-size: 15px; color: #333; margin-bottom: 12px; }
+
+    .feature-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       font-size: 14px;
-      color: #2e7d32;
-      font-weight: bold;
-      min-height: 20px;
+      padding: 5px 0;
     }
-    .hint {
-      font-size: 12px;
+    .feature-on { color: #2e7d32; font-weight: bold; }
+    .feature-off { color: #aaa; }
+
+    .guardian-list { margin-bottom: 12px; }
+    .guardian-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: white;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .guardian-info { flex: 1; min-width: 0; }
+    .guardian-name { font-weight: bold; }
+    .guardian-contact { color: #777; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .add-guardian-form { background: white; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+    .add-guardian-form label { font-size: 12px; margin-bottom: 3px; }
+    .add-guardian-form input { font-size: 14px; padding: 7px 9px; margin-bottom: 8px; }
+
+    .locked-msg {
+      font-size: 13px;
       color: #777;
-      margin-top: -10px;
-      margin-bottom: 14px;
+      background: #fff;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border: 1px dashed #ccc;
     }
+    .sign-out-row { text-align: center; padding: 0 16px 14px; }
   </style>
 </head>
 <body>
-  <h1>🛡️ Safety Buddy</h1>
-  <p class="subtitle">Fill in the details below so Safety Buddy knows who to contact if something looks risky.</p>
+  <header>
+    <span style="font-size:24px">🛡️</span>
+    <h1>Safety Buddy</h1>
+    <span class="plan-badge" id="planBadge">Free</span>
+  </header>
 
-  <label for="userName">Your name</label>
-  <input type="text" id="userName" placeholder="e.g. Rose" />
+  <!-- Auth view -->
+  <div id="authView">
+    <div class="section" id="loginSection">
+      <label for="authEmail">Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" />
+      <label for="authPassword">Password</label>
+      <input type="password" id="authPassword" placeholder="••••••••" />
+      <button class="btn btn-primary" id="loginBtn">Sign In</button>
+      <div class="msg" id="authMsg"></div>
+      <div class="toggle-link" id="showRegister">Don't have an account? Create one</div>
+    </div>
+    <div class="section" id="registerSection" style="display:none">
+      <label for="regName">Your name</label>
+      <input type="text" id="regName" placeholder="e.g. Rose" />
+      <label for="regEmail">Email</label>
+      <input type="email" id="regEmail" placeholder="you@example.com" />
+      <label for="regPassword">Password</label>
+      <input type="password" id="regPassword" placeholder="At least 8 characters" />
+      <button class="btn btn-success" id="registerBtn">Create Account</button>
+      <div class="msg" id="regMsg"></div>
+      <div class="toggle-link" id="showLogin">Already have an account? Sign in</div>
+    </div>
+  </div>
 
-  <label for="guardianName">Family member's name</label>
-  <input type="text" id="guardianName" placeholder="e.g. Sarah" />
+  <!-- Logged-in view -->
+  <div id="accountView" style="display:none">
+    <div class="section">
+      <div class="hi" id="hiLine"></div>
+      <div class="feature-row">
+        <span>URL safety checking</span>
+        <span class="feature-on">✓ On</span>
+      </div>
+      <div class="feature-row">
+        <span>Email alerts</span>
+        <span id="emailFeature" class="feature-off">— Free plan</span>
+      </div>
+      <div class="feature-row">
+        <span>SMS alerts</span>
+        <span id="smsFeature" class="feature-off">— Free plan</span>
+      </div>
+    </div>
 
-  <label for="guardianEmail">Family member's email</label>
-  <input type="email" id="guardianEmail" placeholder="e.g. sarah@example.com" />
+    <div class="section">
+      <label>Guardians <span id="guardianCount" style="font-weight:normal;color:#777;font-size:12px"></span></label>
+      <div class="guardian-list" id="guardianList"></div>
+      <div class="locked-msg" id="upgradeNudge" style="display:none">
+        Email &amp; SMS alerts and up to 5 guardians are available on Pro.
+      </div>
+      <button class="btn btn-outline" id="addGuardianBtn" style="display:none">+ Add guardian</button>
+      <div id="addGuardianForm" class="add-guardian-form" style="display:none">
+        <label>Name</label>
+        <input type="text" id="newGName" placeholder="e.g. Sarah" />
+        <label>Email</label>
+        <input type="email" id="newGEmail" placeholder="sarah@example.com" />
+        <label>Phone (for SMS alerts)</label>
+        <input type="tel" id="newGPhone" placeholder="+1 555 123 4567" />
+        <button class="btn btn-success" id="saveGuardianBtn">Add</button>
+        <button class="btn btn-ghost" id="cancelGuardianBtn">Cancel</button>
+        <div class="msg" id="guardianMsg"></div>
+      </div>
+    </div>
 
-  <label for="guardianPhone">Family member's phone (for urgent alerts)</label>
-  <input type="tel" id="guardianPhone" placeholder="e.g. +1 555 123 4567" />
-  <p class="hint">Include country code. Used only for gift card / money transfer warnings.</p>
+    <div class="section" id="upgradeSection" style="display:none">
+      <button class="btn btn-success" id="upgradeBtn">Upgrade to Pro — $4.99/mo</button>
+    </div>
+    <div class="section" id="manageSection" style="display:none">
+      <button class="btn btn-ghost" id="manageSubBtn">Manage subscription</button>
+    </div>
 
-  <button id="saveBtn">Save Settings</button>
-  <div id="status"></div>
+    <div class="sign-out-row">
+      <button class="btn btn-ghost" id="signOutBtn" style="width:auto;padding:6px 18px;">Sign out</button>
+    </div>
+  </div>
 
   <script src="popup.js"></script>
 </body>

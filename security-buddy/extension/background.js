@@ -1,50 +1,42 @@
-const BACKEND = 'http://localhost:8000';
+const DEFAULT_BACKEND = 'https://api.safetybuddy.app';
 
-async function getConfig() {
-  return new Promise(resolve => chrome.storage.sync.get(
-    ['guardianEmail', 'guardianPhone', 'guardianName', 'userName'],
-    resolve,
-  ));
+async function getBackend() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['backendUrl'], ({ backendUrl }) => {
+      resolve(backendUrl || DEFAULT_BACKEND);
+    });
+  });
+}
+
+async function getApiKey() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['apiKey'], ({ apiKey }) => resolve(apiKey || null));
+  });
+}
+
+async function authHeaders() {
+  const key = await getApiKey();
+  return key
+    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` }
+    : { 'Content-Type': 'application/json' };
 }
 
 async function handleCheckUrl(msg) {
-  const config = await getConfig();
+  const [backend, headers] = await Promise.all([getBackend(), authHeaders()]);
   try {
-    const res = await fetch(`${BACKEND}/check-url`, {
+    const res = await fetch(`${backend}/check-url`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: msg.url,
-        page_title: msg.pageTitle || '',
-      }),
+      headers,
+      body: JSON.stringify({ url: msg.url, page_title: msg.pageTitle || '' }),
     });
-    if (!res.ok) return { safe: true }; // fail open on server error
+    if (!res.ok) return { safe: true };
     return await res.json();
   } catch {
     return { safe: true }; // fail open when backend unreachable
   }
 }
 
-async function sendGuardianNotification(payload) {
-  const config = await getConfig();
-  if (!config.guardianEmail) return;
-
-  fetch(`${BACKEND}/notify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      guardian_email: config.guardianEmail,
-      guardian_name: config.guardianName || 'there',
-      user_name: config.userName || 'Your family member',
-      ...payload,
-    }),
-  }).catch(() => {});
-}
-
 async function handleFinancialDanger(msg, senderTabId) {
-  const config = await getConfig();
-
-  // Redirect the tab to the financial warning page
   const params = new URLSearchParams({
     type: 'financial',
     label: msg.label,
@@ -54,27 +46,37 @@ async function handleFinancialDanger(msg, senderTabId) {
     url: chrome.runtime.getURL('warning.html') + '?' + params.toString(),
   });
 
-  // Fire-and-forget urgent SMS
-  if (config.guardianPhone) {
-    fetch(`${BACKEND}/notify-urgent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        guardian_phone: config.guardianPhone,
-        guardian_name: config.guardianName || 'there',
-        user_name: config.userName || 'Your family member',
-        url: msg.url,
-        label: msg.label,
-        timestamp: new Date().toISOString(),
-      }),
-    }).catch(() => {});
-  }
+  const [backend, headers] = await Promise.all([getBackend(), authHeaders()]);
+  const key = await getApiKey();
+  if (!key) return; // not logged in — skip notification (they're on free/anon)
+
+  fetch(`${backend}/notify-urgent`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      url: msg.url,
+      label: msg.label,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+}
+
+async function sendGuardianNotification(payload) {
+  const key = await getApiKey();
+  if (!key) return;
+
+  const [backend, headers] = await Promise.all([getBackend(), authHeaders()]);
+  fetch(`${backend}/notify`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CHECK_URL') {
     handleCheckUrl(message).then(sendResponse);
-    return true; // keep port open for async response
+    return true;
   }
 
   if (message.type === 'FINANCIAL_DANGER_PAGE') {
@@ -85,7 +87,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'USER_PROCEEDED') {
     sendGuardianNotification({
       url: message.url,
-      reason: message.reason || 'No reason given',
+      reason: message.reason || '',
       risk_level: message.risk || 'unknown',
       proceeded: true,
     });
