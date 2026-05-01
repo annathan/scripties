@@ -1,0 +1,46 @@
+# Home Alarm Panel — HA manual alarm control panel
+# Loaded automatically via packages/ directory.
+#
+# States: disarmed → armed_away / armed_home / armed_night → triggered
+# Entry/exit delays give you time to disarm after arriving home.
+#
+# Sensor groups to populate once you've paired your door/window/motion sensors:
+#   group.security_perimeter   — all external doors + windows (armed in all modes)
+#   group.security_interior    — interior motion sensors (armed_away + armed_night only)
+
+alarm_control_panel:
+  - platform: manual
+    name: Home Alarm
+    code: !secret alarm_code
+    code_arm_required: false       # arm without code; disarm requires code
+    arming_time: 45                # seconds after arming command before system is active
+    delay_time: 30                 # entry delay: seconds before triggering after breach
+    trigger_time: 600              # how long (s) the alarm sounds before silencing
+    disarmed:
+      trigger_time: 0              # sensors don't trigger in disarmed state
+    armed_home:
+      arming_time: 0               # instant arm for armed_home
+      delay_time: 0                # no entry delay when armed_home
+    armed_night:
+      arming_time: 0
+      delay_time: 0
+
+group:
+  security_perimeter:
+    name: Security - Perimeter sensors
+    entities:
+      - binary_sensor.front_door_contact
+      - binary_sensor.back_door_contact
+      - binary_sensor.garage_side_door_contact
+      - binary_sensor.kitchen_window
+      - binary_sensor.living_room_window_left
+      - binary_sensor.living_room_window_right
+      # add all external windows here
+
+  security_interior:
+    name: Security - Interior motion sensors
+    entities:
+      - binary_sensor.living_room_motion
+      - binary_sensor.hallway_motion
+      - binary_sensor.kitchen_motion
+      # add all indoor PIR sensors here

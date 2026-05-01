@@ -24,6 +24,12 @@ input_boolean:
     initial: false
     icon: mdi:account-arrow-left
 
+  # Solar surplus automations master switch
+  solar_surplus_automations_enabled:
+    name: Solar surplus automations enabled
+    initial: true
+    icon: mdi:solar-power
+
 input_number:
   # How long (minutes) the front door stays unlocked after an arrival trigger
   # before auto-relocking. Adjustable from the dashboard.
@@ -35,3 +41,31 @@ input_number:
     initial: 3
     unit_of_measurement: min
     icon: mdi:lock-clock
+
+  # Solar surplus thresholds (W) — adjustable from dashboard without code edits
+  solar_threshold_hot_water:
+    name: Solar surplus threshold — hot water boost
+    min: 500
+    max: 3000
+    step: 100
+    initial: 1000
+    unit_of_measurement: W
+    icon: mdi:water-boiler
+
+  solar_threshold_pool_pump:
+    name: Solar surplus threshold — pool pump high speed
+    min: 1000
+    max: 5000
+    step: 100
+    initial: 2000
+    unit_of_measurement: W
+    icon: mdi:pool
+
+  solar_threshold_ev:
+    name: Solar surplus threshold — EV charging
+    min: 1500
+    max: 5000
+    step: 100
+    initial: 3000
+    unit_of_measurement: W
+    icon: mdi:ev-station

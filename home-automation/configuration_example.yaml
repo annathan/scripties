@@ -44,3 +44,11 @@ mqtt:
 
 # Zigbee (ZHA) — lights and switches
 # Configured via UI after plugging in Sonoff ZBDongle-E
+
+# Alarm control panel
+# Defined in packages/alarm.yaml — loaded automatically via packages/ include
+# Entity: alarm_control_panel.home_alarm
+
+# Camera snapshot directory — create this folder in your HA config:
+#   mkdir -p /config/www/snapshots
+# Snapshots are saved here by the alarm trigger automation.

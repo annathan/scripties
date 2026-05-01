@@ -1,0 +1,182 @@
+# Home alarm panel automations
+# Entity assumptions:
+#   alarm_control_panel.home_alarm        — manual alarm from packages/alarm.yaml
+#   group.security_perimeter              — external door/window sensors
+#   group.security_interior               — interior motion sensors
+#   person.alice / person.bob             — presence detection
+#   media_player.* or siren.*            — for audible alert (optional)
+#   camera.front_door                     — Ring doorbell snapshot on trigger
+
+# ── Auto arm: arm_away when last person leaves ────────────────────────────────
+
+- alias: "Alarm - Arm away when everyone leaves"
+  id: alarm_arm_away_on_departure
+  trigger:
+    - platform: state
+      entity_id: person.alice
+      to: "not_home"
+    - platform: state
+      entity_id: person.bob
+      to: "not_home"
+  condition:
+    - condition: state
+      entity_id: person.alice
+      state: "not_home"
+    - condition: state
+      entity_id: person.bob
+      state: "not_home"
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: alarm_control_panel.home_alarm
+          state: "armed_away"
+  action:
+    - service: alarm_control_panel.alarm_arm_away
+      target:
+        entity_id: alarm_control_panel.home_alarm
+    - service: notify.notify
+      data:
+        title: "🔒 Alarm armed (away)"
+        message: "Everyone has left — alarm set to armed away."
+
+# ── Auto disarm: disarm when first person arrives (was armed_away) ────────────
+
+- alias: "Alarm - Disarm on first arrival"
+  id: alarm_disarm_on_arrival
+  trigger:
+    - platform: zone
+      entity_id: person.alice
+      zone: zone.home
+      event: enter
+    - platform: zone
+      entity_id: person.bob
+      zone: zone.home
+      event: enter
+  condition:
+    - condition: state
+      entity_id: alarm_control_panel.home_alarm
+      state: "armed_away"
+  action:
+    - service: alarm_control_panel.alarm_disarm
+      target:
+        entity_id: alarm_control_panel.home_alarm
+      data:
+        code: !secret alarm_code
+    - service: notify.notify
+      data:
+        title: "🔓 Alarm disarmed"
+        message: "Welcome home — alarm disarmed."
+
+# ── Trigger: perimeter breach in any armed state ──────────────────────────────
+
+- alias: "Alarm - Trigger on perimeter breach"
+  id: alarm_trigger_perimeter
+  trigger:
+    - platform: state
+      entity_id: group.security_perimeter
+      to: "on"
+  condition:
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: alarm_control_panel.home_alarm
+          state: "disarmed"
+  action:
+    - service: alarm_control_panel.alarm_trigger
+      target:
+        entity_id: alarm_control_panel.home_alarm
+
+# ── Trigger: interior motion when armed_away or armed_night ───────────────────
+
+- alias: "Alarm - Trigger on interior motion (armed away/night)"
+  id: alarm_trigger_interior_motion
+  trigger:
+    - platform: state
+      entity_id: group.security_interior
+      to: "on"
+  condition:
+    - condition: or
+      conditions:
+        - condition: state
+          entity_id: alarm_control_panel.home_alarm
+          state: "armed_away"
+        - condition: state
+          entity_id: alarm_control_panel.home_alarm
+          state: "armed_night"
+  action:
+    - service: alarm_control_panel.alarm_trigger
+      target:
+        entity_id: alarm_control_panel.home_alarm
+
+# ── Alert: critical push + camera snapshot when alarm triggers ────────────────
+
+- alias: "Alarm - Notify and snapshot on trigger"
+  id: alarm_notify_on_trigger
+  trigger:
+    - platform: state
+      entity_id: alarm_control_panel.home_alarm
+      to: "triggered"
+  action:
+    - service: notify.notify
+      data:
+        title: "🚨 ALARM TRIGGERED"
+        message: >
+          Alarm triggered at {{ now().strftime('%H:%M') }}.
+          Check cameras immediately.
+        data:
+          push:
+            interruption-level: critical
+          ttl: 0
+          priority: high
+          image: /api/camera_proxy/camera.front_door   # Ring doorbell snapshot
+    - service: camera.snapshot
+      target:
+        entity_id: camera.front_door
+      data:
+        filename: /config/www/snapshots/alarm_{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg
+
+# ── Night arm: arm_night at bedtime (perimeter only, not interior motion) ──────
+
+- alias: "Alarm - Arm night mode at bedtime"
+  id: alarm_arm_night
+  trigger:
+    - platform: time
+      at: "22:30:00"
+  condition:
+    - condition: state
+      entity_id: alarm_control_panel.home_alarm
+      state: "disarmed"
+    - condition: or
+      conditions:
+        - condition: state
+          entity_id: person.alice
+          state: "home"
+        - condition: state
+          entity_id: person.bob
+          state: "home"
+  action:
+    - service: alarm_control_panel.alarm_arm_night
+      target:
+        entity_id: alarm_control_panel.home_alarm
+    - service: notify.notify
+      data:
+        title: "🌙 Alarm set — night mode"
+        message: "Perimeter armed for the night."
+
+# ── Morning disarm: disarm at a reasonable time if still in night mode ─────────
+
+- alias: "Alarm - Disarm night mode in morning"
+  id: alarm_disarm_morning
+  trigger:
+    - platform: time
+      at: "06:30:00"
+  condition:
+    - condition: state
+      entity_id: alarm_control_panel.home_alarm
+      state: "armed_night"
+  action:
+    - service: alarm_control_panel.alarm_disarm
+      target:
+        entity_id: alarm_control_panel.home_alarm
+      data:
+        code: !secret alarm_code
