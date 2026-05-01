@@ -1,0 +1,51 @@
+# Eufy Smart Lock — Integration Setup Notes
+#
+# Recommended hardware:
+#   Eufy Security Smart Lock S330 (WiFi + Bluetooth + fingerprint)
+#   or Eufy Smart Lock Touch & WiFi (T8520) — widely tested with HA
+#
+# Integration: eufy_security (HACS custom integration)
+#   GitHub: https://github.com/bropat/eufy-security-hass
+#   Requires a companion WebSocket bridge running as a Docker container or HA add-on
+#
+# ── Setup Steps ──────────────────────────────────────────────────────────────
+#
+# 1. Install the eufy-security-ws bridge (runs separately from HA):
+#      docker run -d \
+#        --name eufy-security-ws \
+#        --restart unless-stopped \
+#        -p 3000:3000 \
+#        -e USERNAME="your@email.com" \
+#        -e PASSWORD="your_eufy_password" \
+#        -e COUNTRY="AU" \
+#        bropat/eufy-security-ws:latest
+#
+#    Or install the "Eufy Security WS" add-on from HACS add-on store if running HAOS.
+#
+# 2. In HACS → Integrations → search "Eufy Security" → install
+#
+# 3. Settings → Integrations → Add → Eufy Security
+#    - Host: IP of the Docker container (or 127.0.0.1 if add-on)
+#    - Port: 3000
+#
+# 4. Lock appears as:  lock.front_door  (rename in HA UI to match automations)
+#
+# ── Exposed entities (typical) ───────────────────────────────────────────────
+#
+#   lock.front_door              — lock/unlock control + state
+#   sensor.front_door_battery    — battery level %
+#   binary_sensor.front_door     — door open/closed sensor (if model has it)
+#
+# ── Things to configure in the Eufy app first ────────────────────────────────
+#
+#   - Auto-lock delay: set to 30s in-app as a hardware fallback
+#   - Fingerprint profiles for each household member
+#   - Disable Eufy cloud notifications if you'll use HA notifications instead
+#   - Link to Ring doorbell camera for combined door camera + lock view in HA
+#
+# ── Network notes ────────────────────────────────────────────────────────────
+#
+#   The Eufy lock communicates via Bluetooth to an Eufy HomeBase or the lock's
+#   built-in WiFi. Put the lock (or HomeBase) on the IoT VLAN.
+#   The eufy-security-ws bridge needs internet access to authenticate with Eufy
+#   cloud on first run, but day-to-day control is mostly local.

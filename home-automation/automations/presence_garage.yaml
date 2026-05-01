@@ -1,0 +1,125 @@
+# Garage door — presence-based automations
+# Entity assumptions:
+#   cover.garage_door     — ratgdo integration (open/close/state)
+#   person.alice          — HA Companion app tracker
+#   person.bob            — HA Companion app tracker
+#
+# Add to configuration.yaml:
+#   automation: !include_dir_merge_list automations/
+
+# ── Arrival: open garage when a household member enters the Home zone ─────────
+
+- alias: "Garage - Open on arrival (Alice)"
+  id: garage_open_on_arrival_alice
+  trigger:
+    - platform: zone
+      entity_id: person.alice
+      zone: zone.home
+      event: enter
+  condition:
+    - condition: state
+      entity_id: input_boolean.arrival_automations_enabled
+      state: "on"
+    - condition: state
+      entity_id: input_boolean.alice_was_away
+      state: "on"
+    - condition: state
+      entity_id: cover.garage_door
+      state: "closed"
+    - condition: time
+      after: "06:30:00"
+      before: "22:30:00"
+  action:
+    - service: cover.open_cover
+      target:
+        entity_id: cover.garage_door
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.alice_was_away
+    - service: notify.notify
+      data:
+        title: "🏠 Welcome home, Alice"
+        message: "Garage door opened."
+
+- alias: "Garage - Open on arrival (Bob)"
+  id: garage_open_on_arrival_bob
+  trigger:
+    - platform: zone
+      entity_id: person.bob
+      zone: zone.home
+      event: enter
+  condition:
+    - condition: state
+      entity_id: input_boolean.arrival_automations_enabled
+      state: "on"
+    - condition: state
+      entity_id: input_boolean.bob_was_away
+      state: "on"
+    - condition: state
+      entity_id: cover.garage_door
+      state: "closed"
+    - condition: time
+      after: "06:30:00"
+      before: "22:30:00"
+  action:
+    - service: cover.open_cover
+      target:
+        entity_id: cover.garage_door
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.bob_was_away
+    - service: notify.notify
+      data:
+        title: "🏠 Welcome home, Bob"
+        message: "Garage door opened."
+
+# ── Departure: track when people leave so arrival trigger is guarded ──────────
+
+- alias: "Garage - Mark Alice as away on departure"
+  id: garage_mark_alice_away
+  trigger:
+    - platform: zone
+      entity_id: person.alice
+      zone: zone.home
+      event: leave
+  action:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.alice_was_away
+
+- alias: "Garage - Mark Bob as away on departure"
+  id: garage_mark_bob_away
+  trigger:
+    - platform: zone
+      entity_id: person.bob
+      zone: zone.home
+      event: leave
+  action:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.bob_was_away
+
+# ── Safety: close garage if left open and everyone is away ───────────────────
+
+- alias: "Garage - Close if open and everyone away for 10 minutes"
+  id: garage_close_when_all_away
+  trigger:
+    - platform: state
+      entity_id: cover.garage_door
+      to: "open"
+      for: "00:10:00"
+  condition:
+    - condition: state
+      entity_id: person.alice
+      state: "not_home"
+    - condition: state
+      entity_id: person.bob
+      state: "not_home"
+  action:
+    - service: cover.close_cover
+      target:
+        entity_id: cover.garage_door
+    - service: notify.notify
+      data:
+        title: "⚠️ Garage auto-closed"
+        message: "Garage was open with nobody home — closed automatically."

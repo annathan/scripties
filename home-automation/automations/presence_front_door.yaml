@@ -1,0 +1,122 @@
+# Front door lock — presence-based automations
+# Entity assumptions:
+#   lock.front_door       — Eufy lock via eufy_security HACS integration
+#   person.alice / bob    — HA Companion app trackers
+#
+# Security note: GPS geofencing has ~10-50m accuracy. The Home zone
+# (75m radius) means the unlock can fire while you're still at the
+# street. The auto-relock delay and "was_away" guard mitigate this,
+# but consider adding a push notification with a confirm/cancel action
+# if you want a manual approval step before unlocking.
+
+# ── Arrival: unlock front door when a household member enters Home zone ───────
+
+- alias: "Front Door - Unlock on arrival (Alice)"
+  id: front_door_unlock_alice
+  trigger:
+    - platform: zone
+      entity_id: person.alice
+      zone: zone.home
+      event: enter
+  condition:
+    - condition: state
+      entity_id: input_boolean.arrival_automations_enabled
+      state: "on"
+    - condition: state
+      entity_id: input_boolean.alice_was_away
+      state: "on"
+    - condition: state
+      entity_id: lock.front_door
+      state: "locked"
+    - condition: time
+      after: "06:30:00"
+      before: "22:30:00"
+  action:
+    - service: lock.unlock
+      target:
+        entity_id: lock.front_door
+    - service: notify.notify
+      data:
+        title: "🔓 Front door unlocked"
+        message: >
+          Unlocked for Alice's arrival. Will re-lock in
+          {{ states('input_number.front_door_auto_relock_delay') | int }} minutes.
+    - delay:
+        minutes: "{{ states('input_number.front_door_auto_relock_delay') | int }}"
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+
+- alias: "Front Door - Unlock on arrival (Bob)"
+  id: front_door_unlock_bob
+  trigger:
+    - platform: zone
+      entity_id: person.bob
+      zone: zone.home
+      event: enter
+  condition:
+    - condition: state
+      entity_id: input_boolean.arrival_automations_enabled
+      state: "on"
+    - condition: state
+      entity_id: input_boolean.bob_was_away
+      state: "on"
+    - condition: state
+      entity_id: lock.front_door
+      state: "locked"
+    - condition: time
+      after: "06:30:00"
+      before: "22:30:00"
+  action:
+    - service: lock.unlock
+      target:
+        entity_id: lock.front_door
+    - service: notify.notify
+      data:
+        title: "🔓 Front door unlocked"
+        message: >
+          Unlocked for Bob's arrival. Will re-lock in
+          {{ states('input_number.front_door_auto_relock_delay') | int }} minutes.
+    - delay:
+        minutes: "{{ states('input_number.front_door_auto_relock_delay') | int }}"
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+
+# ── Security: auto-lock if left unlocked for too long ────────────────────────
+
+- alias: "Front Door - Auto-lock if unlocked for 10 minutes"
+  id: front_door_auto_lock_timeout
+  trigger:
+    - platform: state
+      entity_id: lock.front_door
+      to: "unlocked"
+      for: "00:10:00"
+  action:
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+    - service: notify.notify
+      data:
+        title: "🔒 Front door locked"
+        message: "Auto-locked after being left open for 10 minutes."
+
+# ── Night lock: ensure door is locked at night ───────────────────────────────
+
+- alias: "Front Door - Ensure locked at night"
+  id: front_door_night_lock
+  trigger:
+    - platform: time
+      at: "22:00:00"
+  condition:
+    - condition: state
+      entity_id: lock.front_door
+      state: "unlocked"
+  action:
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+    - service: notify.notify
+      data:
+        title: "🔒 Front door locked"
+        message: "Night lock — door was unlocked at 10 PM."

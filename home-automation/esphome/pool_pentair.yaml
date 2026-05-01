@@ -1,0 +1,93 @@
+# ESPHome Pool Controller — Pentair RS-485
+# Hardware: ESP32 dev board + MAX485 TTL-to-RS485 module
+# Wire to the RS-485 A/B terminals on the Pentair equipment pad
+#
+# Community reference:
+#   https://community.home-assistant.io/t/esphome-pool-controller-integration-for-pentair-intelliflo-pumps
+
+substitutions:
+  device_name: pool-controller
+  friendly_name: Pool Controller
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  platform: ESP32
+  board: esp32dev
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${device_name} Fallback"
+    password: !secret ap_fallback_password
+
+captive_portal:
+
+logger:
+  baud_rate: 0   # disable serial logger so UART0 is free
+
+api:
+  encryption:
+    key: !secret esphome_api_key
+
+ota:
+  password: !secret esphome_ota_password
+
+uart:
+  id: rs485_uart
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 9600
+  parity: NONE
+  stop_bits: 1
+  data_bits: 8
+
+# ── Sensors ──────────────────────────────────────────────────────────────────
+# These are placeholders — exact register addresses depend on your Pentair
+# controller model (EasyTouch vs IntelliCenter). See community docs above.
+
+sensor:
+  - platform: template
+    name: "Pool Water Temperature"
+    id: pool_water_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+    # value filled by RS-485 component — replace with actual Pentair component
+
+  - platform: template
+    name: "Pool Pump RPM"
+    id: pool_pump_rpm
+    unit_of_measurement: "RPM"
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Pool Pump Watts"
+    id: pool_pump_watts
+    unit_of_measurement: "W"
+    device_class: power
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Chlorinator Salt Level"
+    id: pool_salt
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+
+binary_sensor:
+  - platform: template
+    name: "Pool Heater Active"
+    id: pool_heater_active
+    device_class: heat
+
+switch:
+  - platform: template
+    name: "Pool Pump"
+    id: pool_pump_switch
+    optimistic: true
+
+  - platform: template
+    name: "Pool Light"
+    id: pool_light_switch
+    optimistic: true

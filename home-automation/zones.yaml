@@ -1,0 +1,18 @@
+# Home Assistant Zone Configuration
+# Reference in configuration.yaml with:  zone: !include zones.yaml
+
+# Primary home zone — triggers arrival/departure automations
+- name: Home
+  latitude: !secret home_latitude
+  longitude: !secret home_longitude
+  radius: 75       # metres; tighten if false triggers occur
+  icon: mdi:home
+
+# Pre-arrival zone — use to warm up automations before you pull in
+# e.g. turn on driveway lights, pre-cool/heat home
+- name: Approaching
+  latitude: !secret home_latitude
+  longitude: !secret home_longitude
+  radius: 300
+  passive: true    # won't change person state to "Approaching", used in conditions only
+  icon: mdi:car-arrow-right

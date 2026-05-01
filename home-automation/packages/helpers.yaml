@@ -1,0 +1,37 @@
+# Input helpers used across presence automations.
+# Drop this file in your packages/ directory and add to configuration.yaml:
+#   homeassistant:
+#     packages: !include_dir_named packages
+
+input_boolean:
+  # Flip these to pause all arrival automations (e.g. during a party when
+  # people will be coming and going and you don't want the door auto-unlocking).
+  arrival_automations_enabled:
+    name: Arrival automations enabled
+    initial: true
+    icon: mdi:home-automation
+
+  # Per-person away flags — set ON when person leaves, OFF when they arrive.
+  # Used to prevent the garage/door triggering if a person never actually left
+  # (e.g. HA restarts while they're home and zone re-evaluates on startup).
+  alice_was_away:
+    name: Alice was away
+    initial: false
+    icon: mdi:account-arrow-left
+
+  bob_was_away:
+    name: Bob was away
+    initial: false
+    icon: mdi:account-arrow-left
+
+input_number:
+  # How long (minutes) the front door stays unlocked after an arrival trigger
+  # before auto-relocking. Adjustable from the dashboard.
+  front_door_auto_relock_delay:
+    name: Front door auto-relock delay
+    min: 1
+    max: 15
+    step: 1
+    initial: 3
+    unit_of_measurement: min
+    icon: mdi:lock-clock
