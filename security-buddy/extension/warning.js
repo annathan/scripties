@@ -7,7 +7,8 @@ const label = params.get('label') || 'suspicious page';
 
 const card = document.getElementById('card');
 
-chrome.storage.sync.get(['guardianName', 'userName'], (config) => {
+// Read from chrome.storage.local (same store popup.js and background.js use)
+chrome.storage.local.get(['guardianName', 'userName'], (config) => {
   const guardianName = config.guardianName || 'your family member';
 
   if (type === 'financial') {
@@ -26,19 +27,11 @@ chrome.storage.sync.get(['guardianName', 'userName'], (config) => {
       <button class="btn-secondary" id="continueBtn">I understand — I still want to continue</button>
       <p class="notice">Safety Buddy has already sent ${escHtml(guardianName)} a quick heads-up message.</p>
     `;
-    document.getElementById('callBtn').addEventListener('click', () => {
-      window.history.back();
-    });
+    document.getElementById('callBtn').addEventListener('click', () => window.history.back());
     document.getElementById('continueBtn').addEventListener('click', () => {
-      chrome.runtime.sendMessage({
-        type: 'USER_PROCEEDED',
-        url: dest,
-        reason: `User proceeded to ${label} page`,
-        risk: 'high',
-      });
+      chrome.runtime.sendMessage({ type: 'USER_PROCEEDED', url: dest, reason: `User proceeded to ${label} page`, risk: 'high' });
       window.location.href = dest;
     });
-
   } else {
     document.body.classList.add('url-warning');
     card.innerHTML = `
@@ -49,25 +42,10 @@ chrome.storage.sync.get(['guardianName', 'userName'], (config) => {
       <button class="btn-primary" id="backBtn">Take me back to safety</button>
       <button class="btn-secondary" id="continueBtn">I understand the risk — continue anyway</button>
     `;
-    document.getElementById('backBtn').addEventListener('click', () => {
-      window.history.back();
-    });
+    document.getElementById('backBtn').addEventListener('click', () => window.history.back());
     document.getElementById('continueBtn').addEventListener('click', () => {
-      chrome.runtime.sendMessage({
-        type: 'USER_PROCEEDED',
-        url: dest,
-        reason,
-        risk,
-      });
+      chrome.runtime.sendMessage({ type: 'USER_PROCEEDED', url: dest, reason, risk });
       window.location.href = dest;
     });
   }
 });
-
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}

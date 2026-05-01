@@ -1,3 +1,4 @@
+// DEFAULT_BACKEND must match background.js and content.js exactly.
 const DEFAULT_BACKEND = 'https://api.safetybuddy.app';
 
 async function getBackend() {
@@ -76,6 +77,17 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
 // Account view
 // ---------------------------------------------------------------------------
 
+async function cacheUserDetailsForWarningPage(name) {
+  // warning.js reads guardianName from chrome.storage.local. Keep it current
+  // so the warning page shows the right name without a server round-trip.
+  const guardians = await api('/guardians').catch(() => []);
+  const firstGuardianName = guardians[0]?.name || '';
+  await chrome.storage.local.set({
+    userName: name || '',
+    guardianName: firstGuardianName,
+  });
+}
+
 async function showAccountView(userData) {
   document.getElementById('authView').style.display = 'none';
   document.getElementById('accountView').style.display = '';
@@ -100,6 +112,7 @@ async function showAccountView(userData) {
   document.getElementById('addGuardianBtn').style.display = '';
 
   await loadGuardians(isPro);
+  await cacheUserDetailsForWarningPage(userData.name);
 }
 
 async function loadGuardians(isPro) {
@@ -123,12 +136,13 @@ async function loadGuardians(isPro) {
         <div class="guardian-name">${escHtml(g.name || 'Unnamed')}</div>
         <div class="guardian-contact">${escHtml(g.email || '')}${g.phone ? '  📱' : ''}</div>
       </div>
-      <button class="btn-danger" data-id="${g.id}">Remove</button>
+      <button class="btn-danger" data-id="${escHtml(g.id)}">Remove</button>
     `;
     item.querySelector('.btn-danger').addEventListener('click', async () => {
       try {
         await api(`/guardians/${g.id}`, 'DELETE');
         await loadGuardians(isPro);
+        await cacheUserDetailsForWarningPage(null);
       } catch (e) {
         alert(e.message);
       }
@@ -136,7 +150,6 @@ async function loadGuardians(isPro) {
     list.appendChild(item);
   }
 
-  // Hide add button if at limit
   document.getElementById('addGuardianBtn').style.display = guardians.length >= limit ? 'none' : '';
 }
 
@@ -163,9 +176,9 @@ document.getElementById('saveGuardianBtn').addEventListener('click', async () =>
     document.getElementById('newGName').value = '';
     document.getElementById('newGEmail').value = '';
     document.getElementById('newGPhone').value = '';
-    const key = await getApiKey();
     const me = await api('/account/me');
     await loadGuardians(me.plan === 'pro');
+    await cacheUserDetailsForWarningPage(me.name);
   } catch (e) {
     setMsg('guardianMsg', e.message, 'err');
   }
@@ -191,7 +204,7 @@ document.getElementById('manageSubBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('signOutBtn').addEventListener('click', async () => {
-  await chrome.storage.local.remove(['apiKey']);
+  await chrome.storage.local.remove(['apiKey', 'guardianName', 'userName']);
   document.getElementById('accountView').style.display = 'none';
   document.getElementById('authView').style.display = '';
   document.getElementById('loginSection').style.display = '';
@@ -207,18 +220,13 @@ document.getElementById('signOutBtn').addEventListener('click', async () => {
 
 async function init() {
   const key = await getApiKey();
-  if (!key) return; // show auth view
+  if (!key) return;
   try {
     const me = await api('/account/me');
     await showAccountView(me);
   } catch {
-    await chrome.storage.local.remove(['apiKey']); // stale key — show login
+    await chrome.storage.local.remove(['apiKey']);
   }
 }
 
 init();
-
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

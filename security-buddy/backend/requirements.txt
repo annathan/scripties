@@ -1,17 +1,33 @@
-fastapi>=0.111
-uvicorn[standard]>=0.29
-httpx>=0.27
-anthropic>=0.28
-python-dotenv>=1.0
-pydantic>=2.0
-pydantic[email]>=2.0
-twilio>=9.0
-# Auth + DB
-sqlalchemy[asyncio]>=2.0
-aiosqlite>=0.20       # SQLite for local dev
-asyncpg>=0.29         # PostgreSQL for production
-passlib[bcrypt]>=1.7
+# Core framework
+fastapi>=0.115.0,<0.116
+uvicorn[standard]>=0.32.0,<0.35
+
+# HTTP client
+httpx>=0.27.0,<0.29
+
+# Anthropic (Claude)
+anthropic>=0.40.0,<1
+
+# Validation
+pydantic>=2.9.0,<3
+email-validator>=2.2.0,<3   # required for pydantic EmailStr
+
+# Environment
+python-dotenv>=1.0.1,<2
+
+# Database — async SQLAlchemy with SQLite (dev) and PostgreSQL (prod)
+sqlalchemy[asyncio]>=2.0.36,<3
+aiosqlite>=0.21.0,<0.22     # SQLite async driver (local dev)
+asyncpg>=0.30.0,<0.31       # PostgreSQL async driver (production)
+
+# Auth — argon2-cffi (passlib 1.7.4 is unmaintained and breaks with bcrypt>=4.0)
+argon2-cffi>=23.1.0,<24
+
 # Billing
-stripe>=9.0
-# APScheduler for weekly digest (optional)
-apscheduler>=3.10
+stripe>=10.0.0,<12
+
+# SMS
+twilio>=9.3.0,<10
+
+# Scheduled tasks (weekly digest) — pin to 3.x; APScheduler 4.x is a complete rewrite
+apscheduler>=3.10.4,<4.0

@@ -1,60 +1,50 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+logger = logging.getLogger(__name__)
 
-def _build_email_html(
+
+def _build_email(
     guardian_name: str,
     user_name: str,
     url: str,
     reason: str,
     risk_level: str,
     proceeded: bool,
-) -> tuple[str, str]:
-    action = "tried to visit" if not proceeded else "visited (after choosing to continue)"
+) -> tuple[str, str, str]:
+    action = "visited (after ignoring a warning)" if proceeded else "tried to visit"
     risk_label = {"low": "low", "medium": "some", "high": "serious"}.get(risk_level, "some")
-
     subject = f"Safety Buddy: {user_name} {action} a website that looks risky"
 
     html = f"""
     <html><body style="font-family:sans-serif;font-size:18px;line-height:1.6;color:#222;max-width:600px;margin:auto;padding:24px;">
       <p>Hi {guardian_name},</p>
-      <p>
-        Safety Buddy wanted to let you know that <strong>{user_name}</strong> {action} a website
-        that looked like it might have {risk_label} risk.
-      </p>
+      <p><strong>{user_name}</strong> {action} a website that looked like it might have {risk_label} risk.</p>
       <table style="background:#fff8e1;border-radius:8px;padding:16px 20px;margin:20px 0;width:100%;">
-        <tr><td><strong>Website:</strong></td><td style="word-break:break-all;">{url}</td></tr>
-        <tr><td><strong>What Safety Buddy noticed:</strong></td><td>{reason}</td></tr>
-        <tr><td><strong>Did they continue?</strong></td><td>{"Yes" if proceeded else "No — they went back to safety"}</td></tr>
+        <tr><td style="padding:4px 8px"><strong>Website:</strong></td><td style="word-break:break-all">{url}</td></tr>
+        <tr><td style="padding:4px 8px"><strong>What Safety Buddy noticed:</strong></td><td>{reason}</td></tr>
+        <tr><td style="padding:4px 8px"><strong>Did they continue?</strong></td><td>{"Yes" if proceeded else "No — they went back to safety"}</td></tr>
       </table>
-      <p>
-        {"You may want to give them a quick call to check in." if proceeded else "They went back to safety, so you don't need to do anything right now."}
-      </p>
-      <p>
-        This message was sent automatically by Safety Buddy.<br>
-        <span style="font-size:14px;color:#888;">
-          To stop receiving these messages, open Safety Buddy in your browser and clear the guardian email field.
-        </span>
-      </p>
-      <p>Take care,<br><strong>Safety Buddy 🛡️</strong></p>
+      <p>{"You may want to give them a quick call to check in." if proceeded else "They went back to safety, so no action is needed right now."}</p>
+      <p style="font-size:13px;color:#888;">To stop receiving these messages, open Safety Buddy in your browser and remove the guardian email.</p>
+      <p>Safety Buddy 🛡️</p>
     </body></html>
     """
 
     plain = (
         f"Hi {guardian_name},\n\n"
-        f"Safety Buddy wanted to let you know that {user_name} {action} a website "
-        f"that looked like it might have {risk_label} risk.\n\n"
+        f"{user_name} {action} a website that looked like it might have {risk_label} risk.\n\n"
         f"Website: {url}\n"
         f"What Safety Buddy noticed: {reason}\n"
         f"Did they continue? {'Yes' if proceeded else 'No — they went back to safety'}\n\n"
-        f"{'You may want to give them a quick call.' if proceeded else 'They went back to safety, so you don\\'t need to do anything right now.'}\n\n"
-        f"Safety Buddy 🛡️\n"
-        f"(To stop receiving these messages, open Safety Buddy and clear the guardian email field.)"
+        f"{'You may want to give them a quick call.' if proceeded else 'No action needed right now.'}\n\n"
+        "Safety Buddy"
     )
     return subject, html, plain
 
@@ -73,10 +63,17 @@ def _smtp_send(to_email: str, subject: str, html: str, plain: str) -> None:
     msg.attach(MIMEText(plain, "plain"))
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(smtp_host, smtp_port) as smtp:
-        smtp.starttls()
-        smtp.login(smtp_user, smtp_pass)
-        smtp.sendmail(from_email, to_email, msg.as_string())
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+            smtp.starttls()
+            smtp.login(smtp_user, smtp_pass)
+            smtp.sendmail(from_email, to_email, msg.as_string())
+    except smtplib.SMTPAuthenticationError:
+        logger.error("SMTP authentication failed — check SMTP_USER / SMTP_PASS in .env")
+        raise
+    except smtplib.SMTPException as exc:
+        logger.error("SMTP send failed to %s: %s", to_email, exc)
+        raise
 
 
 async def send_guardian_email(
@@ -91,10 +88,13 @@ async def send_guardian_email(
     if not os.environ.get("SMTP_USER"):
         return  # email not configured — skip silently
 
-    subject, html, plain = _build_email_html(
+    subject, html, plain = _build_email(
         guardian_name, user_name, url, reason, risk_level, proceeded
     )
-    await asyncio.to_thread(_smtp_send, to_email, subject, html, plain)
+    try:
+        await asyncio.to_thread(_smtp_send, to_email, subject, html, plain)
+    except Exception as exc:
+        logger.warning("Email notification failed for %s: %s", to_email, exc)
 
 
 async def send_guardian_sms(
@@ -110,19 +110,22 @@ async def send_guardian_sms(
     if not (sid and token and from_number):
         return  # SMS not configured — skip silently
 
-    from twilio.rest import Client as TwilioClient  # imported here so twilio is optional
+    from twilio.rest import Client as TwilioClient
 
-    message_body = (
+    body = (
         f"Safety Buddy: {user_name} is on a {label} page right now. "
-        f"Gift card and money transfer requests are a common scam. "
-        f"Call them if something seems off."
+        "Gift card and money transfer requests are a common scam. "
+        "Call them if something seems off."
     )
 
-    def _send():
-        TwilioClient(sid, token).messages.create(
-            body=message_body,
-            from_=from_number,
-            to=to_phone,
-        )
+    def _send() -> None:
+        try:
+            TwilioClient(sid, token).messages.create(
+                body=body,
+                from_=from_number,
+                to=to_phone,
+            )
+        except Exception as exc:
+            logger.warning("SMS notification failed for %s: %s", to_phone, exc)
 
     await asyncio.to_thread(_send)

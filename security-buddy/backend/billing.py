@@ -8,46 +8,64 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import User
 
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-
-PRO_PRICE_ID = os.environ.get("STRIPE_PRO_PRICE_ID", "")
 APP_URL = os.environ.get("APP_URL", "https://safetybuddy.app")
+PRO_PRICE_ID = os.environ.get("STRIPE_PRO_PRICE_ID", "")
+
+
+def _client() -> stripe.StripeClient:
+    key = os.environ.get("STRIPE_SECRET_KEY", "")
+    if not key:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+    return stripe.StripeClient(key)
 
 
 async def create_checkout_session(user: User, db: AsyncSession) -> str:
     """Returns the Stripe Checkout URL for upgrading to Pro."""
-    if not stripe.api_key:
-        raise HTTPException(status_code=503, detail="Billing not configured")
+    if not PRO_PRICE_ID:
+        raise HTTPException(status_code=503, detail="Billing price not configured")
 
-    # Create or reuse the Stripe customer
-    customer_id = user.stripe_customer_id
-    if not customer_id:
-        customer = stripe.Customer.create(email=user.email, metadata={"user_id": user.id})
-        user.stripe_customer_id = customer.id
-        await db.commit()
-        customer_id = customer.id
+    client = _client()
+    try:
+        customer_id = user.stripe_customer_id
+        if not customer_id:
+            customer = client.customers.create(
+                params={"email": user.email, "metadata": {"user_id": user.id}}
+            )
+            user.stripe_customer_id = customer.id
+            await db.commit()
+            customer_id = customer.id
 
-    session = stripe.checkout.Session.create(
-        customer=customer_id,
-        mode="subscription",
-        line_items=[{"price": PRO_PRICE_ID, "quantity": 1}],
-        success_url=f"{APP_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{APP_URL}/billing/cancel",
-        metadata={"user_id": user.id},
-    )
-    return session.url
+        session = client.checkout.sessions.create(
+            params={
+                "customer": customer_id,
+                "mode": "subscription",
+                "line_items": [{"price": PRO_PRICE_ID, "quantity": 1}],
+                "success_url": f"{APP_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
+                "cancel_url": f"{APP_URL}/billing/cancel",
+                "metadata": {"user_id": user.id},
+            }
+        )
+        return session.url
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=503, detail=f"Billing service error: {e.user_message or str(e)}")
 
 
 async def create_portal_session(user: User) -> str:
     """Returns the Stripe Customer Portal URL for managing the subscription."""
-    if not stripe.api_key or not user.stripe_customer_id:
-        raise HTTPException(status_code=503, detail="Billing not configured")
+    if not user.stripe_customer_id:
+        raise HTTPException(status_code=400, detail="No billing account found. Please upgrade first.")
 
-    session = stripe.billing_portal.Session.create(
-        customer=user.stripe_customer_id,
-        return_url=f"{APP_URL}/account",
-    )
-    return session.url
+    client = _client()
+    try:
+        session = client.billing_portal.sessions.create(
+            params={
+                "customer": user.stripe_customer_id,
+                "return_url": f"{APP_URL}/account",
+            }
+        )
+        return session.url
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=503, detail=f"Billing service error: {e.user_message or str(e)}")
 
 
 def handle_webhook(payload: bytes, sig_header: str) -> dict:
@@ -60,22 +78,21 @@ def handle_webhook(payload: bytes, sig_header: str) -> dict:
         event = stripe.Webhook.construct_event(payload, sig_header, secret)
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Malformed webhook payload")
 
     return event
 
 
-WEBHOOK_PLAN_MAP = {
+_WEBHOOK_PLAN_MAP = {
     "customer.subscription.created": "pro",
-    "customer.subscription.updated": None,  # handled specially below
     "customer.subscription.deleted": "free",
     "invoice.payment_failed": "free",
 }
 
 
 def plan_from_event(event: dict) -> tuple[str | None, str | None]:
-    """
-    Returns (stripe_customer_id, new_plan) or (None, None) if no action needed.
-    """
+    """Returns (stripe_customer_id, new_plan) or (None, None) if no action needed."""
     event_type = event["type"]
     obj = event["data"]["object"]
 
@@ -84,8 +101,7 @@ def plan_from_event(event: dict) -> tuple[str | None, str | None]:
         new_plan = "pro" if status == "active" else "free"
         return obj.get("customer"), new_plan
 
-    if event_type in WEBHOOK_PLAN_MAP:
-        new_plan = WEBHOOK_PLAN_MAP[event_type]
-        return obj.get("customer"), new_plan
+    if event_type in _WEBHOOK_PLAN_MAP:
+        return obj.get("customer"), _WEBHOOK_PLAN_MAP[event_type]
 
     return None, None

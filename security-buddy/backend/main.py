@@ -3,12 +3,16 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, Header, HTTPException, Request, status
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from dotenv import load_dotenv
+
+load_dotenv()  # load .env before anything else reads os.environ
+
+from fastapi import Depends, Header, HTTPException, Request, status  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from pydantic import BaseModel, EmailStr, Field  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from auth import get_current_user, get_current_user_or_none, hash_password, verify_password
 from billing import create_checkout_session, create_portal_session, handle_webhook, plan_from_event
@@ -26,11 +30,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Safety Buddy Backend", lifespan=lifespan)
 
-allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+# CORS: default to * for local dev. In production set ALLOWED_ORIGINS to a
+# comma-separated list of your frontend origins, e.g.:
+#   ALLOWED_ORIGINS=https://safetybuddy.app,chrome-extension://your-extension-id
+# The extension popup runs at chrome-extension://<id>/popup.html and will be
+# blocked by the browser if its origin is not listed here.
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
+allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_methods=["POST", "GET", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -50,7 +61,7 @@ async def health():
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, description="Minimum 8 characters")
     name: str = ""
 
 
@@ -110,7 +121,10 @@ class GuardianIn(BaseModel):
 
 
 @app.get("/guardians")
-async def list_guardians(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_guardians(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
     guardians = result.scalars().all()
     return [{"id": g.id, "name": g.name, "email": g.email, "phone": g.phone} for g in guardians]
@@ -122,13 +136,22 @@ async def add_guardian(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
-    current_count = len(result.scalars().all())
+    # Atomic count to prevent TOCTOU race when concurrent requests try to add
+    # a guardian at the same moment — both would otherwise pass a separate read+check.
+    result = await db.execute(
+        select(func.count(Guardian.id)).where(Guardian.user_id == user.id)
+    )
+    current_count = result.scalar_one()
+
     if current_count >= user.guardian_limit:
         raise HTTPException(
             status_code=403,
-            detail=f"Free plan supports {user.guardian_limit} guardian. Upgrade to Pro for up to 5.",
+            detail=(
+                f"Free plan supports {user.guardian_limit} guardian. "
+                "Upgrade to Pro for up to 5."
+            ),
         )
+
     guardian = Guardian(user_id=user.id, name=req.name, email=req.email, phone=req.phone)
     db.add(guardian)
     await db.commit()
@@ -169,7 +192,6 @@ async def check_url_endpoint(
 ):
     result = await check_url(req.url, req.page_title)
 
-    # Log the event so Pro users get digest emails
     if user and not result.get("safe", True):
         event = WarningEvent(
             user_id=user.id,
@@ -185,7 +207,7 @@ async def check_url_endpoint(
 
 
 # ---------------------------------------------------------------------------
-# Notify  (email + SMS gated by plan)
+# Notify  (Pro plan only)
 # ---------------------------------------------------------------------------
 
 class NotifyRequest(BaseModel):
@@ -225,17 +247,15 @@ async def notify_endpoint(
                 proceeded=req.proceeded,
             )
 
-    # Log proceeded events
     if req.proceeded:
-        event = WarningEvent(
+        db.add(WarningEvent(
             user_id=user.id,
             url=req.url,
             verdict=False,
             risk_level=req.risk_level,
             reason=req.reason,
             proceeded=True,
-        )
-        db.add(event)
+        ))
         await db.commit()
 
     return {"sent": True}
@@ -262,16 +282,14 @@ async def notify_urgent_endpoint(
                 label=req.label,
             )
 
-    # Always log financial danger events
-    event = WarningEvent(
+    db.add(WarningEvent(
         user_id=user.id,
         url=req.url,
         verdict=False,
         risk_level="high",
         reason=f"Visited {req.label} page",
         label=req.label,
-    )
-    db.add(event)
+    ))
     await db.commit()
 
     return {"sent": True}
@@ -282,7 +300,10 @@ async def notify_urgent_endpoint(
 # ---------------------------------------------------------------------------
 
 @app.post("/billing/checkout")
-async def billing_checkout(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def billing_checkout(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     url = await create_checkout_session(user, db)
     return {"url": url}
 
@@ -299,6 +320,9 @@ async def billing_webhook(
     db: AsyncSession = Depends(get_db),
     stripe_signature: str = Header(None, alias="stripe-signature"),
 ):
+    # IMPORTANT: request.body() must be read before any JSON parsing middleware
+    # touches this route. Do NOT add logging middleware that reads and discards
+    # the body upstream — it will break Stripe signature verification.
     payload = await request.body()
     event = handle_webhook(payload, stripe_signature or "")
 

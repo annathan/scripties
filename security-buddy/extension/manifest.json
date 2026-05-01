@@ -11,7 +11,7 @@
   ],
   "host_permissions": [
     "<all_urls>",
-    "http://localhost:8000/*"
+    "https://api.safetybuddy.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -20,7 +20,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "action": {
@@ -38,13 +38,19 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["warning.html", "icons/*"],
+      "resources": ["icons/*"],
       "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["warning.html"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true
     }
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "safety-buddy@scripties"
+      "id": "safety-buddy@scripties",
+      "strict_min_version": "109.0"
     }
   }
 }

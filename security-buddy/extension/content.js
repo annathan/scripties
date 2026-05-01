@@ -1,6 +1,6 @@
-const BACKEND = 'http://localhost:8000';
+// DEFAULT_BACKEND must match background.js exactly — both point to the same server.
+const DEFAULT_BACKEND = 'https://api.safetybuddy.app';
 
-// --- Financial danger detection (runs on every page load) ---
 const FINANCIAL_DANGER_PATTERNS = [
   { pattern: /amazon\.com\/(dp|gp\/product|gift[-_]?cards?)/i, label: 'Amazon gift card' },
   { pattern: /bestbuy\.com\/(site\/gift[-_]?cards?|GIFT)/i, label: 'Best Buy gift card' },
@@ -15,7 +15,9 @@ const FINANCIAL_DANGER_PATTERNS = [
   { pattern: /coinbase\.com\/(buy|send)/i, label: 'cryptocurrency purchase' },
 ];
 
-(function checkFinancialDanger() {
+// --- Financial danger detection (runs on every navigation) ---
+// Wrap in a function so it can be called after DOMContentLoaded if needed.
+function checkFinancialDanger() {
   const url = window.location.href;
   const match = FINANCIAL_DANGER_PATTERNS.find(p => p.pattern.test(url));
   if (match) {
@@ -26,7 +28,10 @@ const FINANCIAL_DANGER_PATTERNS = [
       pageTitle: document.title,
     });
   }
-})();
+}
+
+// document_start: DOM may not be ready yet, but location.href is always available.
+checkFinancialDanger();
 
 // --- Link click interception ---
 let spinnerEl = null;
@@ -46,7 +51,7 @@ function showCheckingSpinner() {
     <div style="font-size:22px;font-weight:bold;color:#1565c0">Safety Buddy is checking that link…</div>
     <div style="font-size:16px;color:#555;margin-top:8px">Just a moment!</div>
   `;
-  document.body.appendChild(spinnerEl);
+  (document.body || document.documentElement).appendChild(spinnerEl);
 }
 
 function hideCheckingSpinner() {
@@ -64,13 +69,11 @@ document.addEventListener('click', async (e) => {
   try {
     dest = new URL(a.href);
   } catch {
-    return; // unparseable href — leave alone
+    return;
   }
 
-  // Only intercept external http/https links
   if (!['http:', 'https:'].includes(dest.protocol)) return;
   if (dest.hostname === location.hostname) return;
-  // Don't intercept extension-internal pages
   if (a.href.startsWith('chrome-extension://') || a.href.startsWith('moz-extension://')) return;
 
   e.preventDefault();
@@ -86,8 +89,7 @@ document.addEventListener('click', async (e) => {
       pageTitle: document.title,
     });
   } catch {
-    // Backend unreachable — fail open
-    verdict = { safe: true };
+    verdict = { safe: true }; // fail open if extension context is invalidated
   } finally {
     hideCheckingSpinner();
   }
