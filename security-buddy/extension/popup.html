@@ -144,6 +144,32 @@
       border: 1px dashed #ccc;
     }
     .sign-out-row { text-align: center; padding: 0 16px 14px; }
+
+    /* Plan picker */
+    .plan-picker { padding: 14px 16px; }
+    .plan-picker h2 { font-size: 15px; font-weight: bold; color: #1565c0; margin-bottom: 12px; }
+    .toggle-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .toggle-row label {
+      flex: 1; text-align: center; padding: 10px 4px; border-radius: 8px;
+      border: 2px solid #ddd; cursor: pointer; font-size: 14px;
+      font-weight: bold; color: #555; background: white; transition: all 0.15s;
+    }
+    .toggle-row input[type="radio"] { display: none; }
+    .toggle-row input:checked + label {
+      border-color: #1565c0; background: #e3f2fd; color: #1565c0;
+    }
+    .price-display {
+      text-align: center; margin: 10px 0 14px;
+      font-size: 28px; font-weight: bold; color: #1b5e20;
+    }
+    .price-display span { font-size: 14px; font-weight: normal; color: #777; }
+    .api-note {
+      font-size: 12px; color: #777; text-align: center; margin-bottom: 12px; margin-top: -8px;
+    }
+    .renewal-banner {
+      background: #fff3e0; border: 1px solid #ffb74d; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 10px; font-size: 13px; color: #e65100;
+    }
   </style>
 </head>
 <body>
@@ -215,10 +241,36 @@
       </div>
     </div>
 
-    <div class="section" id="upgradeSection" style="display:none">
-      <button class="btn btn-success" id="upgradeBtn">Upgrade to Pro — $4.99/mo</button>
+    <!-- Plan picker (shown on free plan) -->
+    <div class="plan-picker" id="upgradeSection" style="display:none">
+      <h2>Upgrade Safety Buddy</h2>
+
+      <div class="toggle-row">
+        <input type="radio" name="tier" id="tierPersonal" value="personal" checked />
+        <label for="tierPersonal">Personal<br><small style="font-weight:normal">1 device</small></label>
+        <input type="radio" name="tier" id="tierFamily" value="family" />
+        <label for="tierFamily">Family<br><small style="font-weight:normal">up to 5 devices</small></label>
+      </div>
+
+      <div class="toggle-row">
+        <input type="radio" name="paytype" id="payAnnual" value="annual" checked />
+        <label for="payAnnual">Annual<br><small style="font-weight:normal">renews yearly</small></label>
+        <input type="radio" name="paytype" id="payLifetime" value="lifetime" />
+        <label for="payLifetime">Lifetime<br><small style="font-weight:normal">pay once</small></label>
+      </div>
+
+      <div class="price-display" id="priceDisplay">$9.99 <span>/ year</span></div>
+      <div class="api-note" id="apiNote"></div>
+
+      <button class="btn btn-success" id="upgradeBtn">Continue to checkout →</button>
     </div>
+
+    <!-- Manage section (shown on paid plan) -->
     <div class="section" id="manageSection" style="display:none">
+      <div class="renewal-banner" id="renewalBanner" style="display:none">
+        ⚠ Claude AI checking has expired — using Safe Browsing only.
+        <button class="btn btn-outline" id="renewApiBtn" style="margin-top:8px">Renew AI checking — $9.99</button>
+      </div>
       <button class="btn btn-ghost" id="manageSubBtn">Manage subscription</button>
     </div>
 

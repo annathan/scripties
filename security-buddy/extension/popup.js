@@ -111,6 +111,16 @@ async function showAccountView(userData) {
   document.getElementById('upgradeNudge').style.display = isPro ? 'none' : '';
   document.getElementById('addGuardianBtn').style.display = '';
 
+  // Renewal banner for lifetime users whose AI checking has lapsed
+  const renewalBanner = document.getElementById('renewalBanner');
+  if (renewalBanner) {
+    const showRenewal = isPro && userData.plan_type === 'lifetime' && !userData.api_checking_active;
+    renewalBanner.style.display = showRenewal ? '' : 'none';
+  }
+
+  // Initialise plan picker price display
+  updatePriceDisplay();
+
   await loadGuardians(isPro);
   await cacheUserDetailsForWarningPage(userData.name);
 }
@@ -184,10 +194,40 @@ document.getElementById('saveGuardianBtn').addEventListener('click', async () =>
   }
 });
 
-// Billing
+// ---------------------------------------------------------------------------
+// Plan picker
+// ---------------------------------------------------------------------------
+
+const PRICES = {
+  personal_annual:   { label: '$9.99',  suffix: '/ year',  note: '' },
+  family_annual:     { label: '$19.99', suffix: '/ year',  note: '' },
+  personal_lifetime: { label: '$24.99', suffix: 'one-time', note: 'Includes 2 years of AI checking' },
+  family_lifetime:   { label: '$49.99', suffix: 'one-time', note: 'Includes 2 years of AI checking' },
+};
+
+function selectedPlanKey() {
+  const tier = document.querySelector('input[name="tier"]:checked')?.value || 'personal';
+  const paytype = document.querySelector('input[name="paytype"]:checked')?.value || 'annual';
+  return `${tier}_${paytype}`;
+}
+
+function updatePriceDisplay() {
+  const key = selectedPlanKey();
+  const p = PRICES[key];
+  if (!p) return;
+  document.getElementById('priceDisplay').innerHTML =
+    `${escHtml(p.label)} <span>${escHtml(p.suffix)}</span>`;
+  document.getElementById('apiNote').textContent = p.note;
+}
+
+['tierPersonal', 'tierFamily', 'payAnnual', 'payLifetime'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', updatePriceDisplay);
+});
+
 document.getElementById('upgradeBtn').addEventListener('click', async () => {
+  const plan_key = selectedPlanKey();
   try {
-    const data = await api('/billing/checkout', 'POST');
+    const data = await api('/billing/checkout', 'POST', { plan_key });
     chrome.tabs.create({ url: data.url });
   } catch (e) {
     alert(e.message);
@@ -197,6 +237,15 @@ document.getElementById('upgradeBtn').addEventListener('click', async () => {
 document.getElementById('manageSubBtn').addEventListener('click', async () => {
   try {
     const data = await api('/billing/portal', 'POST');
+    chrome.tabs.create({ url: data.url });
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
+document.getElementById('renewApiBtn')?.addEventListener('click', async () => {
+  try {
+    const data = await api('/billing/checkout', 'POST', { plan_key: 'api_renewal' });
     chrome.tabs.create({ url: data.url });
   } catch (e) {
     alert(e.message);

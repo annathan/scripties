@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
-load_dotenv()  # load .env before anything else reads os.environ
+load_dotenv()
 
 from fastapi import Depends, Header, HTTPException, Request, status  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
@@ -15,10 +15,16 @@ from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from auth import get_current_user, get_current_user_or_none, hash_password, verify_password
-from billing import create_checkout_session, create_portal_session, handle_webhook, plan_from_event
+from billing import (
+    VALID_PLAN_KEYS,
+    apply_event,
+    create_checkout_session,
+    create_portal_session,
+    handle_webhook,
+)
 from check_url import check_url
 from database import get_db, init_db
-from models import Guardian, User, WarningEvent
+from models import PLAN_LIFETIME, Guardian, User, WarningEvent
 from notify import send_guardian_email, send_guardian_sms
 
 
@@ -30,11 +36,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Safety Buddy Backend", lifespan=lifespan)
 
-# CORS: default to * for local dev. In production set ALLOWED_ORIGINS to a
-# comma-separated list of your frontend origins, e.g.:
-#   ALLOWED_ORIGINS=https://safetybuddy.app,chrome-extension://your-extension-id
-# The extension popup runs at chrome-extension://<id>/popup.html and will be
-# blocked by the browser if its origin is not listed here.
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
 allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
@@ -61,7 +62,7 @@ async def health():
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=8, description="Minimum 8 characters")
+    password: str = Field(..., min_length=8)
     name: str = ""
 
 
@@ -75,12 +76,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
-
-    user = User(
-        email=req.email,
-        password_hash=hash_password(req.password),
-        name=req.name,
-    )
+    user = User(email=req.email, password_hash=hash_password(req.password), name=req.name)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -106,6 +102,17 @@ async def get_me(user: User = Depends(get_current_user)):
         "email": user.email,
         "name": user.name,
         "plan": user.plan,
+        "plan_tier": user.plan_tier,
+        "plan_type": user.plan_type,
+        "api_checking_active": user.api_checking_active,
+        "api_checking_expires_at": (
+            user.api_checking_expires_at.isoformat()
+            if user.api_checking_expires_at else None
+        ),
+        "plan_expires_at": (
+            user.plan_expires_at.isoformat()
+            if user.plan_expires_at else None
+        ),
         "guardian_limit": user.guardian_limit,
     }
 
@@ -121,13 +128,10 @@ class GuardianIn(BaseModel):
 
 
 @app.get("/guardians")
-async def list_guardians(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+async def list_guardians(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
-    guardians = result.scalars().all()
-    return [{"id": g.id, "name": g.name, "email": g.email, "phone": g.phone} for g in guardians]
+    return [{"id": g.id, "name": g.name, "email": g.email, "phone": g.phone}
+            for g in result.scalars().all()]
 
 
 @app.post("/guardians", status_code=status.HTTP_201_CREATED)
@@ -136,22 +140,14 @@ async def add_guardian(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Atomic count to prevent TOCTOU race when concurrent requests try to add
-    # a guardian at the same moment — both would otherwise pass a separate read+check.
     result = await db.execute(
         select(func.count(Guardian.id)).where(Guardian.user_id == user.id)
     )
-    current_count = result.scalar_one()
-
-    if current_count >= user.guardian_limit:
+    if result.scalar_one() >= user.guardian_limit:
         raise HTTPException(
             status_code=403,
-            detail=(
-                f"Free plan supports {user.guardian_limit} guardian. "
-                "Upgrade to Pro for up to 5."
-            ),
+            detail=f"Your plan supports {user.guardian_limit} guardian(s). Upgrade for more.",
         )
-
     guardian = Guardian(user_id=user.id, name=req.name, email=req.email, phone=req.phone)
     db.add(guardian)
     await db.commit()
@@ -190,17 +186,20 @@ async def check_url_endpoint(
     user: User | None = Depends(get_current_user_or_none),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await check_url(req.url, req.page_title)
+    # Annual plans always use Claude. Lifetime plans use Claude within their 2-year window;
+    # after that they fall back to Safe Browsing only. Unauthenticated users also get Claude
+    # (free tier — fail open so the extension works without an account).
+    use_claude = True if user is None else user.api_checking_active
+    result = await check_url(req.url, req.page_title, use_claude=use_claude)
 
     if user and not result.get("safe", True):
-        event = WarningEvent(
+        db.add(WarningEvent(
             user_id=user.id,
             url=req.url,
-            verdict=result.get("safe", True),
+            verdict=False,
             risk_level=result.get("risk_level", "medium"),
             reason=result.get("reason", ""),
-        )
-        db.add(event)
+        ))
         await db.commit()
 
     return result
@@ -233,9 +232,7 @@ async def notify_endpoint(
         return {"sent": False, "reason": "upgrade_required"}
 
     result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
-    guardians = result.scalars().all()
-
-    for g in guardians:
+    for g in result.scalars().all():
         if g.email:
             await send_guardian_email(
                 to_email=g.email,
@@ -249,12 +246,8 @@ async def notify_endpoint(
 
     if req.proceeded:
         db.add(WarningEvent(
-            user_id=user.id,
-            url=req.url,
-            verdict=False,
-            risk_level=req.risk_level,
-            reason=req.reason,
-            proceeded=True,
+            user_id=user.id, url=req.url, verdict=False,
+            risk_level=req.risk_level, reason=req.reason, proceeded=True,
         ))
         await db.commit()
 
@@ -271,9 +264,7 @@ async def notify_urgent_endpoint(
         return {"sent": False, "reason": "upgrade_required"}
 
     result = await db.execute(select(Guardian).where(Guardian.user_id == user.id))
-    guardians = result.scalars().all()
-
-    for g in guardians:
+    for g in result.scalars().all():
         if g.phone:
             await send_guardian_sms(
                 to_phone=g.phone,
@@ -283,15 +274,10 @@ async def notify_urgent_endpoint(
             )
 
     db.add(WarningEvent(
-        user_id=user.id,
-        url=req.url,
-        verdict=False,
-        risk_level="high",
-        reason=f"Visited {req.label} page",
-        label=req.label,
+        user_id=user.id, url=req.url, verdict=False,
+        risk_level="high", reason=f"Visited {req.label} page", label=req.label,
     ))
     await db.commit()
-
     return {"sent": True}
 
 
@@ -299,12 +285,21 @@ async def notify_urgent_endpoint(
 # Billing
 # ---------------------------------------------------------------------------
 
+class CheckoutRequest(BaseModel):
+    plan_key: str
+
+
 @app.post("/billing/checkout")
 async def billing_checkout(
+    req: CheckoutRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    url = await create_checkout_session(user, db)
+    if req.plan_key not in VALID_PLAN_KEYS:
+        raise HTTPException(status_code=400, detail=f"Invalid plan: {req.plan_key}")
+    if req.plan_key == "api_renewal" and user.plan not in PLAN_LIFETIME:
+        raise HTTPException(status_code=400, detail="API renewal is only for lifetime plan holders.")
+    url = await create_checkout_session(user, db, req.plan_key)
     return {"url": url}
 
 
@@ -320,18 +315,26 @@ async def billing_webhook(
     db: AsyncSession = Depends(get_db),
     stripe_signature: str = Header(None, alias="stripe-signature"),
 ):
-    # IMPORTANT: request.body() must be read before any JSON parsing middleware
-    # touches this route. Do NOT add logging middleware that reads and discards
-    # the body upstream — it will break Stripe signature verification.
+    # IMPORTANT: do not add body-consuming middleware upstream — it breaks Stripe sig verification.
     payload = await request.body()
     event = handle_webhook(payload, stripe_signature or "")
+    updates = apply_event(event)
 
-    customer_id, new_plan = plan_from_event(event)
-    if customer_id and new_plan:
-        result = await db.execute(select(User).where(User.stripe_customer_id == customer_id))
-        user = result.scalar_one_or_none()
+    if updates:
+        user: User | None = None
+
+        if "user_id" in updates:
+            result = await db.execute(select(User).where(User.id == updates.pop("user_id")))
+            user = result.scalar_one_or_none()
+        elif "customer_id" in updates:
+            result = await db.execute(
+                select(User).where(User.stripe_customer_id == updates.pop("customer_id"))
+            )
+            user = result.scalar_one_or_none()
+
         if user:
-            user.plan = new_plan
+            for field, value in updates.items():
+                setattr(user, field, value)
             await db.commit()
 
     return {"received": True}

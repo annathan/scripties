@@ -89,7 +89,7 @@ async def _check_with_claude(url: str, page_title: str) -> dict:
         }
 
 
-async def check_url(url: str, page_title: str = "") -> dict:
+async def check_url(url: str, page_title: str = "", use_claude: bool = True) -> dict:
     sb_result = await _check_safe_browsing(url)
 
     if sb_result is False:
@@ -101,5 +101,13 @@ async def check_url(url: str, page_title: str = "") -> dict:
             "source": "safe_browsing",
         }
 
-    # Safe Browsing was clean or unavailable — ask Claude
+    if not use_claude:
+        # Lifetime plan with expired API checking — Safe Browsing passed, report safe
+        return {
+            "safe": True,
+            "reason": "",
+            "risk_level": "low",
+            "source": "safe_browsing_only",
+        }
+
     return await _check_with_claude(url, page_title)
