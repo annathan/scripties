@@ -1,8 +1,5 @@
-// DEFAULT_BACKEND must match background.js exactly — both point to the same server.
-const DEFAULT_BACKEND = 'https://api.safetybuddy.app';
-
 const FINANCIAL_DANGER_PATTERNS = [
-  { pattern: /amazon\.com\/(dp|gp\/product|gift[-_]?cards?)/i, label: 'Amazon gift card' },
+  { pattern: /amazon\.com\/(gift[-_]?cards?|gp\/gift)/i, label: 'Amazon gift card' },
   { pattern: /bestbuy\.com\/(site\/gift[-_]?cards?|GIFT)/i, label: 'Best Buy gift card' },
   { pattern: /target\.com\/(gift[-_]?cards?|p\/gift)/i, label: 'Target gift card' },
   { pattern: /walmart\.com\/browse\/gift[-_]?cards?/i, label: 'Walmart gift card' },

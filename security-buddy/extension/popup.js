@@ -92,7 +92,7 @@ async function showAccountView(userData) {
   document.getElementById('authView').style.display = 'none';
   document.getElementById('accountView').style.display = '';
 
-  const isPro = userData.plan === 'pro';
+  const isPro = userData.plan !== 'free';
   const badge = document.getElementById('planBadge');
   badge.textContent = isPro ? 'Pro ✓' : 'Free';
   badge.className = 'plan-badge' + (isPro ? ' pro' : '');
@@ -187,7 +187,7 @@ document.getElementById('saveGuardianBtn').addEventListener('click', async () =>
     document.getElementById('newGEmail').value = '';
     document.getElementById('newGPhone').value = '';
     const me = await api('/account/me');
-    await loadGuardians(me.plan === 'pro');
+    await loadGuardians(me.plan !== 'free');
     await cacheUserDetailsForWarningPage(me.name);
   } catch (e) {
     setMsg('guardianMsg', e.message, 'err');

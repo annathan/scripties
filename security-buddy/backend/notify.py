@@ -6,6 +6,7 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape as _he
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +23,19 @@ def _build_email(
     risk_label = {"low": "low", "medium": "some", "high": "serious"}.get(risk_level, "some")
     subject = f"Safety Buddy: {user_name} {action} a website that looks risky"
 
+    # All user-supplied strings are HTML-escaped before interpolation.
+    g = _he(guardian_name)
+    u = _he(user_name)
+    r = _he(reason)
+    safe_url = _he(url)
+
     html = f"""
     <html><body style="font-family:sans-serif;font-size:18px;line-height:1.6;color:#222;max-width:600px;margin:auto;padding:24px;">
-      <p>Hi {guardian_name},</p>
-      <p><strong>{user_name}</strong> {action} a website that looked like it might have {risk_label} risk.</p>
+      <p>Hi {g},</p>
+      <p><strong>{u}</strong> {action} a website that looked like it might have {risk_label} risk.</p>
       <table style="background:#fff8e1;border-radius:8px;padding:16px 20px;margin:20px 0;width:100%;">
-        <tr><td style="padding:4px 8px"><strong>Website:</strong></td><td style="word-break:break-all">{url}</td></tr>
-        <tr><td style="padding:4px 8px"><strong>What Safety Buddy noticed:</strong></td><td>{reason}</td></tr>
+        <tr><td style="padding:4px 8px"><strong>Website:</strong></td><td style="word-break:break-all">{safe_url}</td></tr>
+        <tr><td style="padding:4px 8px"><strong>What Safety Buddy noticed:</strong></td><td>{r}</td></tr>
         <tr><td style="padding:4px 8px"><strong>Did they continue?</strong></td><td>{"Yes" if proceeded else "No — they went back to safety"}</td></tr>
       </table>
       <p>{"You may want to give them a quick call to check in." if proceeded else "They went back to safety, so no action is needed right now."}</p>
