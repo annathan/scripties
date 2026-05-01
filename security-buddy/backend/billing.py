@@ -1,122 +1,180 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
-import stripe
+import httpx
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import PLAN_ANNUAL, PLAN_LIFETIME, User
 
+# Use sandbox while PADDLE_SANDBOX=true; flip to production when ready
+_SANDBOX = os.environ.get("PADDLE_SANDBOX", "true").lower() == "true"
+PADDLE_API_BASE = (
+    "https://sandbox-api.paddle.com" if _SANDBOX else "https://api.paddle.com"
+)
+PADDLE_PORTAL_URL = "https://customer.paddle.com"
+
 APP_URL = os.environ.get("APP_URL", "https://safetybuddy.app")
 
-# One Stripe Price ID per product. Create these in the Stripe dashboard:
-#   personal_annual / family_annual  → recurring, yearly interval
-#   personal_lifetime / family_lifetime / api_renewal → one-time payment
+# Create one Price in the Paddle dashboard for each product:
+#   annual prices → recurring, yearly billing interval
+#   lifetime / api_renewal prices → one-time charge
 PLAN_PRICES: dict[str, str | None] = {
-    "personal_annual":   os.environ.get("STRIPE_PERSONAL_ANNUAL_PRICE_ID"),
-    "family_annual":     os.environ.get("STRIPE_FAMILY_ANNUAL_PRICE_ID"),
-    "personal_lifetime": os.environ.get("STRIPE_PERSONAL_LIFETIME_PRICE_ID"),
-    "family_lifetime":   os.environ.get("STRIPE_FAMILY_LIFETIME_PRICE_ID"),
-    "api_renewal":       os.environ.get("STRIPE_API_RENEWAL_PRICE_ID"),
+    "personal_annual":   os.environ.get("PADDLE_PERSONAL_ANNUAL_PRICE_ID"),
+    "family_annual":     os.environ.get("PADDLE_FAMILY_ANNUAL_PRICE_ID"),
+    "personal_lifetime": os.environ.get("PADDLE_PERSONAL_LIFETIME_PRICE_ID"),
+    "family_lifetime":   os.environ.get("PADDLE_FAMILY_LIFETIME_PRICE_ID"),
+    "api_renewal":       os.environ.get("PADDLE_API_RENEWAL_PRICE_ID"),
 }
 
 VALID_PLAN_KEYS = set(PLAN_PRICES.keys())
-_API_CHECKING_DAYS = 730  # 2 years
+_API_CHECKING_DAYS = 730  # 2-year Claude API window for lifetime plans
+_WEBHOOK_MAX_AGE_SECS = 300  # reject webhooks older than 5 minutes
 
 
-def _client() -> stripe.StripeClient:
-    key = os.environ.get("STRIPE_SECRET_KEY", "")
+def _auth_headers() -> dict[str, str]:
+    key = os.environ.get("PADDLE_API_KEY", "")
     if not key:
         raise HTTPException(status_code=503, detail="Billing not configured")
-    return stripe.StripeClient(key)
+    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
 
 def plan_from_price_id(price_id: str) -> str | None:
-    """Map a Stripe Price ID back to our internal plan key."""
+    """Map a Paddle Price ID back to our internal plan key."""
     return next((k for k, v in PLAN_PRICES.items() if v and v == price_id), None)
 
 
+async def _get_or_create_customer(user: User, db: AsyncSession) -> str:
+    """Return the Paddle customer ID, creating one via the API if not yet stored."""
+    if user.paddle_customer_id:
+        return user.paddle_customer_id
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{PADDLE_API_BASE}/customers",
+                headers=_auth_headers(),
+                json={"email": user.email, "name": user.name or user.email},
+            )
+            resp.raise_for_status()
+            customer_id: str = resp.json()["data"]["id"]
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=503, detail=f"Billing error: {exc.response.text}")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Billing unreachable: {exc}")
+
+    user.paddle_customer_id = customer_id
+    await db.commit()
+    return customer_id
+
+
 async def create_checkout_session(user: User, db: AsyncSession, plan_key: str) -> str:
-    """Return a Stripe Checkout URL for the given plan_key."""
+    """Return a Paddle-hosted checkout URL for the requested plan."""
     price_id = PLAN_PRICES.get(plan_key)
     if not price_id:
-        raise HTTPException(status_code=503, detail=f"Price not configured for plan: {plan_key}")
+        raise HTTPException(status_code=503, detail=f"Price not configured: {plan_key}")
 
-    is_one_time = plan_key in PLAN_LIFETIME or plan_key == "api_renewal"
-    mode = "payment" if is_one_time else "subscription"
+    customer_id = await _get_or_create_customer(user, db)
 
-    client = _client()
     try:
-        customer_id = user.stripe_customer_id
-        if not customer_id:
-            customer = client.customers.create(
-                params={"email": user.email, "metadata": {"user_id": user.id}}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{PADDLE_API_BASE}/transactions",
+                headers=_auth_headers(),
+                json={
+                    "items": [{"price_id": price_id, "quantity": 1}],
+                    "customer_id": customer_id,
+                    "checkout": {"url": f"{APP_URL}/billing/success"},
+                    # custom_data is echoed back in all related webhook events
+                    "custom_data": {"plan_key": plan_key, "user_id": user.id},
+                },
             )
-            user.stripe_customer_id = customer.id
-            await db.commit()
-            customer_id = customer.id
-
-        session = client.checkout.sessions.create(
-            params={
-                "customer": customer_id,
-                "mode": mode,
-                "line_items": [{"price": price_id, "quantity": 1}],
-                "success_url": f"{APP_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
-                "cancel_url": f"{APP_URL}/billing/cancel",
-                # plan_key in metadata lets the webhook know which plan to activate
-                "metadata": {"plan_key": plan_key, "user_id": user.id},
-            }
-        )
-        return session.url
-    except stripe.StripeError as exc:
-        raise HTTPException(status_code=503, detail=f"Billing error: {exc.user_message or str(exc)}")
+            resp.raise_for_status()
+            return resp.json()["data"]["checkout"]["url"]
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=503, detail=f"Billing error: {exc.response.text}")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Billing unreachable: {exc}")
 
 
 async def create_portal_session(user: User) -> str:
-    if not user.stripe_customer_id:
+    """Return the Paddle customer portal URL.
+
+    Unlike Stripe, Paddle does not issue pre-authenticated portal sessions via
+    the API. The customer logs in to the self-serve portal with their email.
+    """
+    if not user.paddle_customer_id:
         raise HTTPException(status_code=400, detail="No billing account found. Please upgrade first.")
-    client = _client()
-    try:
-        session = client.billing_portal.sessions.create(
-            params={"customer": user.stripe_customer_id, "return_url": f"{APP_URL}/account"}
-        )
-        return session.url
-    except stripe.StripeError as exc:
-        raise HTTPException(status_code=503, detail=f"Billing error: {exc.user_message or str(exc)}")
+    return PADDLE_PORTAL_URL
 
 
-def handle_webhook(payload: bytes, sig_header: str) -> dict:
-    secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+def verify_webhook(payload: bytes, sig_header: str) -> None:
+    """Verify the Paddle-Signature header and raise 400 if invalid.
+
+    Paddle signature format:  ts=<unix_timestamp>;h1=<hmac_sha256_hex>
+    Signed payload:           <timestamp>:<raw_body>
+    """
+    secret = os.environ.get("PADDLE_WEBHOOK_SECRET", "")
     if not secret:
         raise HTTPException(status_code=503, detail="Webhook secret not configured")
+
     try:
-        return stripe.Webhook.construct_event(payload, sig_header, secret)
-    except stripe.error.SignatureVerificationError:
+        parts = dict(part.split("=", 1) for part in sig_header.split(";"))
+        ts = parts["ts"]
+        h1 = parts["h1"]
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=400, detail="Malformed Paddle-Signature header")
+
+    try:
+        age = abs(time.time() - int(ts))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid webhook timestamp")
+    if age > _WEBHOOK_MAX_AGE_SECS:
+        raise HTTPException(status_code=400, detail="Webhook timestamp too old")
+
+    signed_payload = f"{ts}:{payload.decode()}"
+    expected = hmac.new(
+        secret.encode(),
+        signed_payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected, h1):
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Malformed webhook payload")
 
 
 def apply_event(event: dict) -> dict | None:
-    """Return a dict of field updates to apply to the matching User, or None if no action."""
-    event_type = event["type"]
-    obj = event["data"]["object"]
+    """Parse a Paddle webhook event and return field updates for the matching User.
 
-    # --- One-time payments (lifetime + api_renewal) ---
-    if event_type == "checkout.session.completed" and obj.get("mode") == "payment":
-        meta = obj.get("metadata") or {}
-        plan_key = meta.get("plan_key")
-        user_id = meta.get("user_id")
+    Returns a dict that always contains either 'user_id' (preferred, from
+    custom_data) to identify the user. Returns None when no action is needed.
+    """
+    event_type = event.get("event_type", "")
+    data = event.get("data", {})
+    custom = data.get("custom_data") or {}
+    user_id = custom.get("user_id")
+
+    now = datetime.now(timezone.utc)
+
+    # ------------------------------------------------------------------
+    # One-time payments  (lifetime licences + API renewal)
+    # Skip if this transaction is part of a subscription (handled below).
+    # ------------------------------------------------------------------
+    if event_type == "transaction.completed" and not data.get("subscription_id"):
+        plan_key = custom.get("plan_key")
         if not plan_key or not user_id:
             return None
 
-        now = datetime.now(timezone.utc)
         expires = now + timedelta(days=_API_CHECKING_DAYS)
 
         if plan_key == "api_renewal":
             return {"user_id": user_id, "api_checking_expires_at": expires}
+
         if plan_key in PLAN_LIFETIME:
             return {
                 "user_id": user_id,
@@ -126,26 +184,51 @@ def apply_event(event: dict) -> dict | None:
             }
         return None
 
-    # --- Subscription events (annual plans) ---
-    customer_id = obj.get("customer")
-
-    if event_type in ("customer.subscription.created", "customer.subscription.updated"):
-        status = obj.get("status")
-        if status not in ("active", "trialing"):
-            return {"customer_id": customer_id, "plan": "free", "plan_expires_at": None}
-        # Derive plan from the first line item price
-        items = obj.get("items", {}).get("data", [])
-        price_id = items[0]["price"]["id"] if items else None
-        plan_key = plan_from_price_id(price_id) if price_id else None
-        if not plan_key or plan_key not in PLAN_ANNUAL:
+    # ------------------------------------------------------------------
+    # Subscription created (annual plans)
+    # ------------------------------------------------------------------
+    if event_type == "subscription.created":
+        plan_key = custom.get("plan_key")
+        if not plan_key or not user_id or plan_key not in PLAN_ANNUAL:
             return None
-        period_end = obj.get("current_period_end")
-        expires_at = (
-            datetime.fromtimestamp(period_end, tz=timezone.utc) if period_end else None
-        )
-        return {"customer_id": customer_id, "plan": plan_key, "plan_expires_at": expires_at}
+        next_billed = data.get("next_billed_at")
+        expires_at = _parse_iso(next_billed)
+        return {"user_id": user_id, "plan": plan_key, "plan_expires_at": expires_at}
 
-    if event_type in ("customer.subscription.deleted", "invoice.payment_failed"):
-        return {"customer_id": customer_id, "plan": "free", "plan_expires_at": None}
+    # ------------------------------------------------------------------
+    # Subscription updated (renewal, plan change, pause/resume)
+    # ------------------------------------------------------------------
+    if event_type == "subscription.updated":
+        if not user_id:
+            return None
+        status = data.get("status")
+        if status in ("canceled", "paused"):
+            return {"user_id": user_id, "plan": "free", "plan_expires_at": None}
+        if status in ("active", "trialing"):
+            items = data.get("items", [])
+            price_id = items[0]["price"]["id"] if items else None
+            plan_key = plan_from_price_id(price_id) if price_id else custom.get("plan_key")
+            if not plan_key:
+                return None
+            next_billed = data.get("next_billed_at")
+            return {
+                "user_id": user_id,
+                "plan": plan_key,
+                "plan_expires_at": _parse_iso(next_billed),
+            }
+        return None
+
+    # ------------------------------------------------------------------
+    # Subscription canceled / payment failed
+    # ------------------------------------------------------------------
+    if event_type in ("subscription.canceled", "transaction.payment_failed"):
+        if user_id:
+            return {"user_id": user_id, "plan": "free", "plan_expires_at": None}
 
     return None
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))

@@ -20,7 +20,7 @@ from billing import (
     apply_event,
     create_checkout_session,
     create_portal_session,
-    handle_webhook,
+    verify_webhook,
 )
 from check_url import check_url
 from database import get_db, init_db
@@ -313,24 +313,23 @@ async def billing_portal(user: User = Depends(get_current_user)):
 async def billing_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    stripe_signature: str = Header(None, alias="stripe-signature"),
+    paddle_signature: str = Header(None, alias="paddle-signature"),
 ):
-    # IMPORTANT: do not add body-consuming middleware upstream — it breaks Stripe sig verification.
+    # IMPORTANT: do not add body-consuming middleware upstream — it would break
+    # signature verification (raw bytes required).
     payload = await request.body()
-    event = handle_webhook(payload, stripe_signature or "")
+    verify_webhook(payload, paddle_signature or "")
+    import json
+    event = json.loads(payload)
     updates = apply_event(event)
 
     if updates:
-        user: User | None = None
+        user_id = updates.pop("user_id", None)
+        if not user_id:
+            return {"received": True}
 
-        if "user_id" in updates:
-            result = await db.execute(select(User).where(User.id == updates.pop("user_id")))
-            user = result.scalar_one_or_none()
-        elif "customer_id" in updates:
-            result = await db.execute(
-                select(User).where(User.stripe_customer_id == updates.pop("customer_id"))
-            )
-            user = result.scalar_one_or_none()
+        result = await db.execute(select(User).where(User.id == user_id))
+        user: User | None = result.scalar_one_or_none()
 
         if user:
             for field, value in updates.items():

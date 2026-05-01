@@ -23,9 +23,6 @@ asyncpg>=0.30.0,<0.31       # PostgreSQL async driver (production)
 # Auth — argon2-cffi (passlib 1.7.4 is unmaintained and breaks with bcrypt>=4.0)
 argon2-cffi>=23.1.0,<24
 
-# Billing
-stripe>=10.0.0,<12
-
 # SMS
 twilio>=9.3.0,<10
 

@@ -50,7 +50,7 @@ class User(Base):
     plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Lifetime plans: 2 years of Claude API checking included from purchase date
     api_checking_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    stripe_customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    paddle_customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     guardians: Mapped[list[Guardian]] = relationship(
