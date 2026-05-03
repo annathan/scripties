@@ -65,8 +65,13 @@ async function sendGuardianNotification(payload) {
   }
 }
 
-// MV3 service workers are ephemeral — never rely on module-level state persisting
-// across messages. All state must be read from chrome.storage inside each handler.
+// Open the onboarding page the first time the extension is installed.
+// Updates and browser restarts do not re-trigger this.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') });
+  }
+});
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CHECK_URL') {
     handleCheckUrl(message).then(sendResponse).catch(() => sendResponse({ safe: true }));

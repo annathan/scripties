@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Set up Safety Buddy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f7ff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 52px 44px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.09);
+      text-align: center;
+    }
+    .emoji { font-size: 72px; margin-bottom: 20px; line-height: 1; }
+    h1 { font-size: 26px; color: #1565c0; margin-bottom: 10px; line-height: 1.35; }
+    h1.done { color: #1b5e20; font-size: 24px; }
+    .sub { font-size: 16px; color: #555; margin-bottom: 28px; line-height: 1.6; }
+    .form { text-align: left; }
+    label {
+      display: block; font-size: 13px; font-weight: bold;
+      color: #444; margin-bottom: 5px;
+    }
+    input {
+      width: 100%; padding: 11px 13px; font-size: 15px;
+      border: 1.5px solid #ddd; border-radius: 8px;
+      margin-bottom: 16px; background: #fafafa;
+      transition: border-color 0.15s;
+    }
+    input:focus { outline: none; border-color: #1565c0; background: white; }
+    .btn {
+      width: 100%; padding: 14px; font-size: 16px; font-weight: bold;
+      border: none; border-radius: 10px; cursor: pointer; margin-bottom: 10px;
+    }
+    .btn-primary { background: #1565c0; color: white; }
+    .btn-primary:hover { background: #0d47a1; }
+    .btn-success { background: #2e7d32; color: white; }
+    .btn-success:hover { background: #1b5e20; }
+    .btn-ghost {
+      width: 100%; background: transparent; color: #999;
+      border: none; font-size: 14px; cursor: pointer; padding: 8px;
+    }
+    .btn-ghost:hover { color: #555; }
+    .msg { font-size: 13px; color: #c62828; min-height: 18px; margin-bottom: 8px; }
+    .toggle-link { font-size: 13px; color: #888; margin-top: 6px; }
+    .toggle-link span { color: #1565c0; cursor: pointer; }
+    .toggle-link span:hover { text-decoration: underline; }
+    .safe-note {
+      font-size: 15px; color: #444; line-height: 1.7;
+      background: #f0f7ff; border-radius: 10px;
+      padding: 18px 20px; margin: 20px 0; text-align: left;
+    }
+    .skip-note {
+      font-size: 13px; color: #aaa; margin-top: 10px; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- Register -->
+    <div id="screenRegister">
+      <div class="emoji">🛡️</div>
+      <h1>Set up Safety Buddy</h1>
+      <p class="sub">Takes about 60 seconds.<br>We'll have someone watching over you.</p>
+      <div class="form">
+        <label for="regName">Your name</label>
+        <input type="text" id="regName" placeholder="e.g. Margaret" autocomplete="name" />
+        <label for="regEmail">Your email</label>
+        <input type="email" id="regEmail" placeholder="you@example.com" autocomplete="email" />
+        <label for="regPassword">Choose a password</label>
+        <input type="password" id="regPassword" placeholder="At least 8 characters" />
+        <div class="msg" id="regMsg"></div>
+        <button class="btn btn-primary" id="regBtn">Continue →</button>
+      </div>
+      <div class="toggle-link">Already have an account? <span id="showSignIn">Sign in</span></div>
+    </div>
+
+    <!-- Sign in (returning users / reinstalls) -->
+    <div id="screenSignIn" style="display:none">
+      <div class="emoji">🛡️</div>
+      <h1>Welcome back</h1>
+      <p class="sub">Sign in to your Safety Buddy account.</p>
+      <div class="form">
+        <label for="siEmail">Email</label>
+        <input type="email" id="siEmail" autocomplete="email" />
+        <label for="siPassword">Password</label>
+        <input type="password" id="siPassword" autocomplete="current-password" />
+        <div class="msg" id="siMsg"></div>
+        <button class="btn btn-primary" id="siBtn">Sign in</button>
+      </div>
+      <div class="toggle-link"><span id="showRegister">Create a new account instead</span></div>
+    </div>
+
+    <!-- Guardian -->
+    <div id="screenGuardian" style="display:none">
+      <div class="emoji">💬</div>
+      <h1>Who should we contact?</h1>
+      <p class="sub">If you click something dangerous, we'll send them a message straight away.</p>
+      <div class="form">
+        <label for="gName">Their name</label>
+        <input type="text" id="gName" placeholder="e.g. Sarah" />
+        <label for="gEmail">Their email</label>
+        <input type="email" id="gEmail" placeholder="sarah@example.com" />
+        <label for="gPhone">Their mobile number <span style="font-weight:normal;color:#999">(for urgent alerts)</span></label>
+        <input type="tel" id="gPhone" placeholder="+1 555 123 4567" />
+        <div class="msg" id="gMsg"></div>
+        <button class="btn btn-success" id="gBtn">Set up Safety Buddy →</button>
+        <button class="btn-ghost" id="gSkipBtn">I'll add this later</button>
+        <p class="skip-note">Without a contact, the extension still protects you — but no one will be notified if something goes wrong.</p>
+      </div>
+    </div>
+
+    <!-- Confirmation -->
+    <div id="screenDone" style="display:none">
+      <div class="emoji">🛡️</div>
+      <h1 class="done" id="doneHeadline"></h1>
+      <p class="sub" id="doneDetail"></p>
+      <div class="safe-note" id="safeNote"></div>
+      <button class="btn btn-primary" id="doneBtn">Got it — close this tab</button>
+    </div>
+
+  </div>
+
+  <script src="utils.js"></script>
+  <script src="onboarding.js"></script>
+</body>
+</html>
