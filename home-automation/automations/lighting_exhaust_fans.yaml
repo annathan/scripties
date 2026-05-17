@@ -1,0 +1,90 @@
+# Lighting — Bathroom exhaust fan automations
+# The electrical plan shows exhaust fans interlinked with bathroom lights.
+# These automations replicate that behaviour via HA so it works whether
+# lights are triggered by the physical switch, motion sensor, or an automation.
+#
+# Each bathroom has:
+#   - A Zigbee dimmer controlling the light: light.X_dimmer
+#   - A SONOFF ZBMINIL2 or Shelly switch controlling the exhaust fan: switch.X_fan
+#
+# Fans stay on for 10 minutes after the light turns off to clear steam.
+#
+# Bathrooms covered:
+#   Ground floor:  light.ground_floor_bathroom_dimmer / switch.ground_floor_bathroom_fan
+#   First floor:   light.bathroom_first_floor_dimmer  / switch.bathroom_first_floor_fan
+#   Master ensuite: light.master_ensuite_dimmer       / switch.master_ensuite_fan
+
+# ── Ground floor bathroom ─────────────────────────────────────────────────────
+
+- alias: "Exhaust Fan - Ground floor bathroom on with light"
+  id: fan_gf_bathroom_on
+  trigger:
+    - platform: state
+      entity_id: light.ground_floor_bathroom_dimmer
+      to: "on"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.ground_floor_bathroom_fan
+
+- alias: "Exhaust Fan - Ground floor bathroom off 10 min after light"
+  id: fan_gf_bathroom_off
+  trigger:
+    - platform: state
+      entity_id: light.ground_floor_bathroom_dimmer
+      to: "off"
+  action:
+    - delay: "00:10:00"
+    - service: switch.turn_off
+      target:
+        entity_id: switch.ground_floor_bathroom_fan
+
+# ── First floor shared bathroom ───────────────────────────────────────────────
+
+- alias: "Exhaust Fan - First floor bathroom on with light"
+  id: fan_1f_bathroom_on
+  trigger:
+    - platform: state
+      entity_id: light.bathroom_first_floor_dimmer
+      to: "on"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.bathroom_first_floor_fan
+
+- alias: "Exhaust Fan - First floor bathroom off 10 min after light"
+  id: fan_1f_bathroom_off
+  trigger:
+    - platform: state
+      entity_id: light.bathroom_first_floor_dimmer
+      to: "off"
+  action:
+    - delay: "00:10:00"
+    - service: switch.turn_off
+      target:
+        entity_id: switch.bathroom_first_floor_fan
+
+# ── Master ensuite ────────────────────────────────────────────────────────────
+
+- alias: "Exhaust Fan - Master ensuite on with light"
+  id: fan_master_ensuite_on
+  trigger:
+    - platform: state
+      entity_id: light.master_ensuite_dimmer
+      to: "on"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.master_ensuite_fan
+
+- alias: "Exhaust Fan - Master ensuite off 10 min after light"
+  id: fan_master_ensuite_off
+  trigger:
+    - platform: state
+      entity_id: light.master_ensuite_dimmer
+      to: "off"
+  action:
+    - delay: "00:10:00"
+    - service: switch.turn_off
+      target:
+        entity_id: switch.master_ensuite_fan

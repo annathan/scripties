@@ -1,0 +1,264 @@
+# Lighting helpers — input booleans and selectors for lighting automations.
+# Loaded automatically via packages/ directory.
+
+input_boolean:
+  # ── School sick-day flags (reset automatically at midnight) ──────────────
+  # Toggle ON from dashboard if a school kid is staying home.
+  # Prevents their bedroom + bathroom lights being auto-off at 08:45.
+  kid_1_home_sick:
+    name: "Kid 1 home sick (Bed 2)"
+    initial: false
+    icon: mdi:emoticon-sick-outline
+
+  kid_2_home_sick:
+    name: "Kid 2 home sick (Bed 3)"
+    initial: false
+    icon: mdi:emoticon-sick-outline
+
+  kid_3_home_sick:
+    name: "Kid 3 home sick (Bed 4)"
+    initial: false
+    icon: mdi:emoticon-sick-outline
+
+  # ── Scene mode flags ──────────────────────────────────────────────────────
+  # Toggle these from the dashboard or a physical Hue button.
+
+  movie_mode:
+    name: Movie mode
+    initial: false
+    icon: mdi:movie-open
+
+  colour_party_mode:
+    name: Colour party mode
+    initial: false
+    icon: mdi:led-strip-variant
+
+input_select:
+  # Per-kids-bedroom scene selector — surface on the dashboard as a dropdown.
+  # Kids (or parents) can switch between modes without writing automations.
+  bed_2_scene:
+    name: "Bed 2 — lighting scene"
+    options:
+      - Normal
+      - Study (cool bright)
+      - Wind-down (dim warm)
+      - Night light (red)
+      - Off
+    initial: Normal
+    icon: mdi:lightbulb-group
+
+  bed_3_scene:
+    name: "Bed 3 — lighting scene"
+    options:
+      - Normal
+      - Study (cool bright)
+      - Wind-down (dim warm)
+      - Night light (red)
+      - Off
+    initial: Normal
+    icon: mdi:lightbulb-group
+
+  bed_4_scene:
+    name: "Bed 4 — lighting scene"
+    options:
+      - Normal
+      - Study (cool bright)
+      - Wind-down (dim warm)
+      - Night light (red)
+      - Off
+    initial: Normal
+    icon: mdi:lightbulb-group
+
+# ── Scene selector automations ────────────────────────────────────────────────
+# When a kid changes their room's dropdown, apply the scene immediately.
+# Repeat this block for Bed 3 and Bed 4 (copy, change entity IDs).
+
+automation:
+  - alias: "Lighting - Apply Bed 2 scene on selector change"
+    id: lighting_bed2_scene_selector
+    trigger:
+      - platform: state
+        entity_id: input_select.bed_2_scene
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_2_scene
+                state: "Normal"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_2_dimmer, light.bed_2_lamp]
+                data:
+                  brightness_pct: 80
+                  color_temp_kelvin: 3500
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_2_scene
+                state: "Study (cool bright)"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_2_dimmer, light.bed_2_lamp]
+                data:
+                  brightness_pct: 100
+                  color_temp_kelvin: 5000
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_2_scene
+                state: "Wind-down (dim warm)"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_2_dimmer, light.bed_2_lamp]
+                data:
+                  brightness_pct: 25
+                  color_temp_kelvin: 2200
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_2_scene
+                state: "Night light (red)"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: light.bed_2_dimmer
+              - service: light.turn_on
+                target:
+                  entity_id: light.bed_2_lamp
+                data:
+                  brightness_pct: 10
+                  rgb_color: [255, 20, 0]
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_2_scene
+                state: "Off"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: [light.bed_2_dimmer, light.bed_2_lamp]
+
+  - alias: "Lighting - Apply Bed 3 scene on selector change"
+    id: lighting_bed3_scene_selector
+    trigger:
+      - platform: state
+        entity_id: input_select.bed_3_scene
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_3_scene
+                state: "Normal"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_3_dimmer, light.bed_3_lamp]
+                data:
+                  brightness_pct: 80
+                  color_temp_kelvin: 3500
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_3_scene
+                state: "Study (cool bright)"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_3_dimmer, light.bed_3_lamp]
+                data:
+                  brightness_pct: 100
+                  color_temp_kelvin: 5000
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_3_scene
+                state: "Wind-down (dim warm)"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_3_dimmer, light.bed_3_lamp]
+                data:
+                  brightness_pct: 25
+                  color_temp_kelvin: 2200
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_3_scene
+                state: "Night light (red)"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: light.bed_3_dimmer
+              - service: light.turn_on
+                target:
+                  entity_id: light.bed_3_lamp
+                data:
+                  brightness_pct: 10
+                  rgb_color: [255, 20, 0]
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_3_scene
+                state: "Off"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: [light.bed_3_dimmer, light.bed_3_lamp]
+
+  - alias: "Lighting - Apply Bed 4 scene on selector change"
+    id: lighting_bed4_scene_selector
+    trigger:
+      - platform: state
+        entity_id: input_select.bed_4_scene
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_4_scene
+                state: "Normal"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_4_dimmer, light.bed_4_lamp]
+                data:
+                  brightness_pct: 80
+                  color_temp_kelvin: 3500
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_4_scene
+                state: "Study (cool bright)"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_4_dimmer, light.bed_4_lamp]
+                data:
+                  brightness_pct: 100
+                  color_temp_kelvin: 5000
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_4_scene
+                state: "Wind-down (dim warm)"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: [light.bed_4_dimmer, light.bed_4_lamp]
+                data:
+                  brightness_pct: 25
+                  color_temp_kelvin: 2200
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_4_scene
+                state: "Night light (red)"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: light.bed_4_dimmer
+              - service: light.turn_on
+                target:
+                  entity_id: light.bed_4_lamp
+                data:
+                  brightness_pct: 10
+                  rgb_color: [255, 20, 0]
+          - conditions:
+              - condition: state
+                entity_id: input_select.bed_4_scene
+                state: "Off"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: [light.bed_4_dimmer, light.bed_4_lamp]

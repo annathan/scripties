@@ -1,0 +1,207 @@
+# Lighting — School routine automations
+# Based on Palazzo 6 Plus DG floor plan:
+#   School kids: Bed 2, Bed 3, Bed 4 (first floor)
+#   Uni student: Bed 5 (ground floor, her own zone — separate automation)
+#   Shared first floor bathroom covered by school-off
+#   Ground floor bathroom excluded (uni student + guests)
+#
+# Calendar setup:
+#   1. Create Google Calendar: "Kids School Days"
+#   2. Add recurring all-day events for NSW school term days
+#   3. Delete events for pupil-free days and school holidays
+#   4. HA: Settings → Integrations → Google Calendar → select "Kids School Days"
+#   Entity: calendar.kids_school_days
+#
+# Sick day toggles (per kid) are in packages/lighting_helpers.yaml
+# Rename these entity IDs after pairing your Zigbee dimmers in ZHA:
+#   light.bed_2_dimmer, light.bed_3_dimmer, light.bed_4_dimmer
+#   light.bathroom_first_floor_dimmer
+
+# ── School morning: gradual wake-up light in kids rooms ──────────────────────
+
+- alias: "Lighting - Kids wake-up ramp (school days)"
+  id: lighting_kids_wakeup_ramp
+  trigger:
+    - platform: time
+      at: "07:00:00"
+  condition:
+    - condition: state
+      entity_id: calendar.kids_school_days
+      state: "on"
+  action:
+    # Bed 2 wake-up (skip if home sick)
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_1_home_sick
+          state: "off"
+      then:
+        - service: light.turn_on
+          target:
+            entity_id: light.bed_2_dimmer
+          data:
+            brightness_pct: 30
+            color_temp_kelvin: 2700   # warm start
+        - delay: "00:10:00"
+        - service: light.turn_on
+          target:
+            entity_id: light.bed_2_dimmer
+          data:
+            brightness_pct: 80
+            color_temp_kelvin: 4000   # cooler/more alert after 10 min
+    # Bed 3
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_2_home_sick
+          state: "off"
+      then:
+        - service: light.turn_on
+          target:
+            entity_id: light.bed_3_dimmer
+          data:
+            brightness_pct: 30
+            color_temp_kelvin: 2700
+        - delay: "00:10:00"
+        - service: light.turn_on
+          target:
+            entity_id: light.bed_3_dimmer
+          data:
+            brightness_pct: 80
+            color_temp_kelvin: 4000
+    # Bed 4
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_3_home_sick
+          state: "off"
+      then:
+        - service: light.turn_on
+          target:
+            entity_id: light.bed_4_dimmer
+          data:
+            brightness_pct: 30
+            color_temp_kelvin: 2700
+        - delay: "00:10:00"
+        - service: light.turn_on
+          target:
+            entity_id: light.bed_4_dimmer
+          data:
+            brightness_pct: 80
+            color_temp_kelvin: 4000
+
+# ── School lights off at 08:45 ────────────────────────────────────────────────
+
+- alias: "Lighting - School lights off (Beds 2/3/4 + bathroom)"
+  id: lighting_school_off
+  trigger:
+    - platform: time
+      at: "08:45:00"
+  condition:
+    - condition: state
+      entity_id: calendar.kids_school_days
+      state: "on"
+  action:
+    # Turn off each school kid's bedroom (skip if home sick)
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_1_home_sick
+          state: "off"
+      then:
+        - service: light.turn_off
+          target:
+            entity_id:
+              - light.bed_2_dimmer
+              - light.bed_2_lamp
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_2_home_sick
+          state: "off"
+      then:
+        - service: light.turn_off
+          target:
+            entity_id:
+              - light.bed_3_dimmer
+              - light.bed_3_lamp
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_3_home_sick
+          state: "off"
+      then:
+        - service: light.turn_off
+          target:
+            entity_id:
+              - light.bed_4_dimmer
+              - light.bed_4_lamp
+
+    # Turn off shared bathroom only if NO school kids are home sick
+    - if:
+        - condition: state
+          entity_id: input_boolean.kid_1_home_sick
+          state: "off"
+        - condition: state
+          entity_id: input_boolean.kid_2_home_sick
+          state: "off"
+        - condition: state
+          entity_id: input_boolean.kid_3_home_sick
+          state: "off"
+      then:
+        - service: light.turn_off
+          target:
+            entity_id: light.bathroom_first_floor_dimmer
+
+    # Notify parents
+    - service: notify.notify
+      data:
+        title: "🏫 School lights off"
+        message: >
+          {% set sick = [] %}
+          {% if is_state('input_boolean.kid_1_home_sick', 'on') %}
+            {% set sick = sick + ['Bed 2'] %}
+          {% endif %}
+          {% if is_state('input_boolean.kid_2_home_sick', 'on') %}
+            {% set sick = sick + ['Bed 3'] %}
+          {% endif %}
+          {% if is_state('input_boolean.kid_3_home_sick', 'on') %}
+            {% set sick = sick + ['Bed 4'] %}
+          {% endif %}
+          {% if sick | length > 0 %}
+            Lights off. Excluded (home sick): {{ sick | join(', ') }}.
+          {% else %}
+            All kids' lights off.
+          {% endif %}
+
+# ── Auto-reset sick day booleans each evening so they don't carry over ────────
+
+- alias: "Lighting - Reset sick day flags at midnight"
+  id: lighting_reset_sick_flags
+  trigger:
+    - platform: time
+      at: "00:01:00"
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id:
+          - input_boolean.kid_1_home_sick
+          - input_boolean.kid_2_home_sick
+          - input_boolean.kid_3_home_sick
+
+# ── Uni student (Bed 5): lights off when she leaves on a weekday ──────────────
+# Trigger: her phone drops off home WiFi between 07:00 and 11:00 on a weekday.
+# Uses person.uni_student which aggregates her device_tracker.
+
+- alias: "Lighting - Bed 5 off when uni student leaves"
+  id: lighting_bed5_off_on_departure
+  trigger:
+    - platform: state
+      entity_id: person.uni_student
+      to: "not_home"
+  condition:
+    - condition: time
+      after: "07:00:00"
+      before: "11:00:00"
+    - condition: template
+      value_template: "{{ now().weekday() < 5 }}"   # Monday–Friday only
+  action:
+    - service: light.turn_off
+      target:
+        entity_id:
+          - light.bed_5_dimmer
+          - light.bed_5_lamp

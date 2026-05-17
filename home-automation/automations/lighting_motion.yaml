@@ -1,0 +1,220 @@
+# Lighting — Motion-triggered automations
+# PIR sensors (Aqara or SONOFF SNZB-03) placed at:
+#   binary_sensor.pir_entry          — entry/foyer
+#   binary_sensor.pir_staircase      — mid-staircase
+#   binary_sensor.pir_landing        — first floor landing
+#   binary_sensor.pir_master_ensuite — master ensuite
+#   binary_sensor.pir_bathroom_gf    — ground floor bathroom
+#   binary_sensor.pir_bathroom_1f    — first floor shared bathroom
+#
+# Night mode threshold: after 22:00 and before 06:00 lights come on dim.
+# Daytime: motion triggers lights only if they're already off (avoids
+# fighting with manual overrides during the day).
+
+# ── Entry: auto-on when someone arrives ───────────────────────────────────────
+
+- alias: "Lighting - Entry auto-on (motion)"
+  id: lighting_entry_motion_on
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_entry
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: light.entry_dimmer
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.entry_dimmer
+      data:
+        brightness_pct: "{{ 30 if now().hour >= 22 or now().hour < 6 else 100 }}"
+        color_temp_kelvin: "{{ 2700 if now().hour >= 22 or now().hour < 6 else 4000 }}"
+
+- alias: "Lighting - Entry auto-off (no motion 5 min)"
+  id: lighting_entry_motion_off
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_entry
+      to: "off"
+      for: "00:05:00"
+  condition:
+    # Only auto-off if nobody has been home long (i.e. this was a brief visit trigger)
+    - condition: state
+      entity_id: light.entry_dimmer
+      state: "on"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.entry_dimmer
+
+# ── Staircase: motion-triggered, dim at night ─────────────────────────────────
+
+- alias: "Lighting - Staircase on (motion)"
+  id: lighting_staircase_motion_on
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_staircase
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: light.staircase_dimmer
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.staircase_dimmer
+      data:
+        brightness_pct: "{{ 10 if now().hour >= 22 or now().hour < 6 else 80 }}"
+        color_temp_kelvin: 2700
+
+- alias: "Lighting - Staircase off (no motion 3 min)"
+  id: lighting_staircase_motion_off
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_staircase
+      to: "off"
+      for: "00:03:00"
+  condition:
+    - condition: state
+      entity_id: light.staircase_dimmer
+      state: "on"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.staircase_dimmer
+
+# ── First floor landing: night light ─────────────────────────────────────────
+
+- alias: "Lighting - Landing night light (motion after 22:00)"
+  id: lighting_landing_night_motion
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_landing
+      to: "on"
+  condition:
+    - condition: time
+      after: "22:00:00"
+      before: "06:00:00"
+    - condition: state
+      entity_id: light.landing_dimmer
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.landing_dimmer
+      data:
+        brightness_pct: 5
+        color_temp_kelvin: 2700
+
+- alias: "Lighting - Landing night light off (no motion 2 min)"
+  id: lighting_landing_night_off
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_landing
+      to: "off"
+      for: "00:02:00"
+  condition:
+    - condition: time
+      after: "22:00:00"
+      before: "06:00:00"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.landing_dimmer
+
+# ── Master ensuite: motion-triggered, very dim at night ──────────────────────
+
+- alias: "Lighting - Master ensuite on (motion)"
+  id: lighting_master_ensuite_on
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_master_ensuite
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: light.master_ensuite_dimmer
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.master_ensuite_dimmer
+      data:
+        brightness_pct: "{{ 8 if now().hour >= 22 or now().hour < 6 else 90 }}"
+        color_temp_kelvin: 2700
+
+- alias: "Lighting - Master ensuite off (no motion 10 min)"
+  id: lighting_master_ensuite_off
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_master_ensuite
+      to: "off"
+      for: "00:10:00"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.master_ensuite_dimmer
+
+# ── Ground floor bathroom: motion-triggered ───────────────────────────────────
+
+- alias: "Lighting - Ground floor bathroom on (motion)"
+  id: lighting_gf_bathroom_on
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_bathroom_gf
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: light.ground_floor_bathroom_dimmer
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.ground_floor_bathroom_dimmer
+      data:
+        brightness_pct: "{{ 10 if now().hour >= 22 or now().hour < 6 else 90 }}"
+        color_temp_kelvin: 2700
+
+- alias: "Lighting - Ground floor bathroom off (no motion 10 min)"
+  id: lighting_gf_bathroom_off
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_bathroom_gf
+      to: "off"
+      for: "00:10:00"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.ground_floor_bathroom_dimmer
+
+# ── First floor bathroom: motion-triggered ────────────────────────────────────
+
+- alias: "Lighting - First floor bathroom on (motion)"
+  id: lighting_1f_bathroom_on
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_bathroom_1f
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: light.bathroom_first_floor_dimmer
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.bathroom_first_floor_dimmer
+      data:
+        brightness_pct: "{{ 10 if now().hour >= 22 or now().hour < 6 else 90 }}"
+        color_temp_kelvin: 2700
+
+- alias: "Lighting - First floor bathroom off (no motion 10 min)"
+  id: lighting_1f_bathroom_off
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.pir_bathroom_1f
+      to: "off"
+      for: "00:10:00"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.bathroom_first_floor_dimmer
