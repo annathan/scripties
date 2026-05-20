@@ -39,13 +39,6 @@ Rules:
 """
 
 
-def _trim(data: dict, max_chars: int = 14000) -> str:
-    raw = json.dumps(data, indent=2)
-    if len(raw) > max_chars:
-        raw = raw[:max_chars] + "\n... [truncated for length]"
-    return raw
-
-
 def _parse_response(text: str) -> dict:
     fields = {
         "threat_level": "UNKNOWN",
@@ -105,9 +98,12 @@ async def synthesize_threat(input_value: str, raw_data: dict) -> dict:
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
 
+    # Use the pre-extracted, compact summaries — avoids truncation problems
+    # with large raw API payloads and gives Claude the signal it actually needs.
+    intel = raw_data.get("sources") or raw_data
     user_message = (
         f"Indicator submitted: {input_value}\n\n"
-        f"Threat intelligence data:\n{_trim(raw_data)}\n\n"
+        f"Threat intelligence data:\n{json.dumps(intel, indent=2)}\n\n"
         "Write the threat card now."
     )
 

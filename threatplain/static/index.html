@@ -193,7 +193,7 @@
       font-weight: 700;
       font-size: 0.85rem;
       letter-spacing: 0.04em;
-      margin-bottom: 1.5rem;
+      margin-bottom: 0.85rem;
     }
     .threat-SAFE     { background: #dcfce7; color: #15803d; }
     .threat-LOW      { background: #fef9c3; color: #854d0e; }
@@ -201,6 +201,53 @@
     .threat-HIGH     { background: #fee2e2; color: #991b1b; }
     .threat-CRITICAL { background: #450a0a; color: #fecaca; }
     .threat-UNKNOWN  { background: #f1f5f9; color: #475569; }
+
+    /* ── Sources bar ── */
+    .sources-bar {
+      display: none;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 1.25rem;
+    }
+    .source-chip {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+    }
+    .source-chip.clean   { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+    .source-chip.warn    { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
+    .source-chip.danger  { border-color: #fca5a5; background: #fff5f5; color: #991b1b; }
+
+    /* ── Screenshot ── */
+    .screenshot-block {
+      display: none;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 1.25rem;
+    }
+    .screenshot-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      padding: 0.5rem 0.85rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .screenshot-block img {
+      width: 100%;
+      display: block;
+      max-height: 280px;
+      object-fit: cover;
+      object-position: top;
+      cursor: zoom-in;
+    }
 
     /* ── Sections ── */
     .sections { display: flex; flex-direction: column; gap: 1rem; }
@@ -231,8 +278,8 @@
       font-size: 0.95rem;
       line-height: 1.65;
       color: var(--text);
-      white-space: pre-wrap;
     }
+    .section-body p + p { margin-top: 0.4rem; }
     .section-body ul { padding-left: 1.25rem; margin-top: 0.25rem; }
     .section-body li { margin-bottom: 0.3rem; }
 
@@ -243,7 +290,6 @@
       margin-top: 1.5rem;
       flex-wrap: wrap;
     }
-
     .copy-confirm {
       font-size: 0.8rem;
       color: var(--green);
@@ -319,6 +365,15 @@
 
       <div class="threat-badge" id="threat-badge"></div>
 
+      <!-- Source evidence chips -->
+      <div class="sources-bar" id="sources-bar"></div>
+
+      <!-- URLScan screenshot (URL results only) -->
+      <div class="screenshot-block" id="screenshot-block">
+        <div class="screenshot-label">What the page looks like</div>
+        <img id="screenshot-img" alt="Page screenshot" loading="lazy" />
+      </div>
+
       <div class="sections">
         <div class="section section-blue">
           <h3>What is this?</h3>
@@ -350,12 +405,12 @@
   const $ = id => document.getElementById(id);
 
   const THREAT_LABELS = {
-    SAFE:     { label: '✓ Safe',       cls: 'threat-SAFE' },
-    LOW:      { label: '↓ Low Risk',   cls: 'threat-LOW' },
-    MEDIUM:   { label: '! Medium Risk',cls: 'threat-MEDIUM' },
-    HIGH:     { label: '!! High Risk', cls: 'threat-HIGH' },
-    CRITICAL: { label: '⚠ Critical',   cls: 'threat-CRITICAL' },
-    UNKNOWN:  { label: '? Unknown',    cls: 'threat-UNKNOWN' },
+    SAFE:     { label: '✓ Safe',        cls: 'threat-SAFE' },
+    LOW:      { label: '↓ Low Risk',    cls: 'threat-LOW' },
+    MEDIUM:   { label: '! Medium Risk', cls: 'threat-MEDIUM' },
+    HIGH:     { label: '!! High Risk',  cls: 'threat-HIGH' },
+    CRITICAL: { label: '⚠ Critical',    cls: 'threat-CRITICAL' },
+    UNKNOWN:  { label: '? Unknown',     cls: 'threat-UNKNOWN' },
   };
 
   const TYPE_LABELS = {
@@ -368,6 +423,132 @@
 
   function show(id)  { $(id).style.display = 'block'; }
   function hide(id)  { $(id).style.display = 'none';  }
+
+  // ── Safe DOM-based body renderer (no innerHTML with user content) ──
+
+  function renderBody(elId, text) {
+    const el = $(elId);
+    el.textContent = '';
+    if (!text) {
+      el.textContent = 'Insufficient data to determine this.';
+      return;
+    }
+
+    const lines = text.split('\n');
+    const hasBullets = lines.some(l => /^[-•*]\s/.test(l.trim()));
+
+    if (hasBullets) {
+      let ul = null;
+      for (const line of lines) {
+        const m = line.trim().match(/^[-•*]\s+([\s\S]*)/);
+        if (m) {
+          if (!ul) { ul = document.createElement('ul'); el.appendChild(ul); }
+          const li = document.createElement('li');
+          li.textContent = m[1];
+          ul.appendChild(li);
+        } else {
+          ul = null;
+          if (line.trim()) {
+            const p = document.createElement('p');
+            p.textContent = line;
+            el.appendChild(p);
+          }
+        }
+      }
+    } else {
+      const lines2 = text.split('\n');
+      for (const line of lines2) {
+        if (line.trim()) {
+          const p = document.createElement('p');
+          p.textContent = line;
+          el.appendChild(p);
+        }
+      }
+    }
+  }
+
+  // ── Source evidence chips ──
+
+  function chip(label, cssClass) {
+    const el = document.createElement('span');
+    el.className = 'source-chip ' + (cssClass || '');
+    el.textContent = label;
+    return el;
+  }
+
+  function renderSources(sources) {
+    const bar = $('sources-bar');
+    bar.textContent = '';
+    if (!sources || !Object.keys(sources).length) return;
+
+    // VirusTotal detection count
+    const vt = sources.virustotal;
+    if (vt && !vt.error && vt.total > 0) {
+      const pct = vt.malicious / vt.total;
+      const cls = vt.malicious > 0 ? 'danger' : 'clean';
+      bar.appendChild(chip(`VirusTotal: ${vt.malicious}/${vt.total} flagged`, cls));
+    } else if (vt && vt.error) {
+      bar.appendChild(chip('VirusTotal: unavailable'));
+    }
+
+    // AbuseIPDB confidence
+    const abuse = sources.abuseipdb;
+    if (abuse && !abuse.error && abuse.abuse_confidence != null) {
+      const c = abuse.abuse_confidence;
+      const cls = c >= 50 ? 'danger' : c > 15 ? 'warn' : 'clean';
+      bar.appendChild(chip(`AbuseIPDB: ${c}% abuse score`, cls));
+    }
+
+    // URLScan verdict
+    const us = sources.urlscan;
+    if (us && !us.error && us.verdict) {
+      const cls = (us.malicious || us.phishing) ? 'danger' : 'clean';
+      bar.appendChild(chip(`URLScan: ${us.verdict}`, cls));
+    }
+
+    // Email auth (SPF / DKIM / DMARC)
+    const auth = sources.email_auth;
+    if (auth && Object.keys(auth).length) {
+      for (const [proto, result] of Object.entries(auth)) {
+        const cls = result === 'pass' ? 'clean' : result === 'fail' ? 'danger' : 'warn';
+        bar.appendChild(chip(`${proto.toUpperCase()}: ${result}`, cls));
+      }
+    }
+
+    // Worst-flagged IP from email header analysis
+    const ipAnalysis = sources.ip_analysis;
+    if (ipAnalysis) {
+      let worstIp = null, worstCount = 0;
+      for (const [ip, data] of Object.entries(ipAnalysis)) {
+        const m = (data.virustotal || {}).malicious || 0;
+        const a = (data.abuseipdb || {}).abuse_confidence || 0;
+        if (m > worstCount || a > 50) { worstIp = ip; worstCount = m; }
+      }
+      if (worstIp) {
+        const d = ipAnalysis[worstIp];
+        const m = (d.virustotal || {}).malicious || 0;
+        const a = (d.abuseipdb || {}).abuse_confidence || 0;
+        if (m > 0 || a > 15) {
+          const cls = (m > 5 || a > 50) ? 'danger' : 'warn';
+          bar.appendChild(chip(`${worstIp}: ${m > 0 ? m + ' VT flags' : a + '% abuse'}`, cls));
+        }
+      }
+    }
+
+    bar.style.display = bar.children.length ? 'flex' : 'none';
+  }
+
+  // ── Screenshot ──
+
+  function renderScreenshot(url) {
+    const block = $('screenshot-block');
+    if (!url) { block.style.display = 'none'; return; }
+    $('screenshot-img').src = url;
+    $('screenshot-img').onclick = () => window.open(url, '_blank');
+    block.style.display = 'block';
+  }
+
+  // ── Main result renderer ──
 
   function showResult(data) {
     hide('input-form');
@@ -383,46 +564,19 @@
 
     const level = (syn.threat_level || 'UNKNOWN').toUpperCase();
     const badge = THREAT_LABELS[level] || THREAT_LABELS.UNKNOWN;
-    const el = $('threat-badge');
-    el.textContent = badge.label;
-    el.className = 'threat-badge ' + badge.cls;
+    const badgeEl = $('threat-badge');
+    badgeEl.textContent = badge.label;
+    badgeEl.className = 'threat-badge ' + badge.cls;
 
-    function renderBody(elId, text) {
-      const el = $(elId);
-      if (!text) { el.textContent = 'Insufficient data to determine this.'; return; }
-      // Convert leading "- " or "• " lines to a <ul>
-      const lines = text.split('\n');
-      const hasBullets = lines.some(l => l.trim().match(/^[-•*]\s/));
-      if (hasBullets) {
-        let html = '';
-        let inList = false;
-        for (const line of lines) {
-          const m = line.trim().match(/^[-•*]\s+(.*)/);
-          if (m) {
-            if (!inList) { html += '<ul>'; inList = true; }
-            html += `<li>${escHtml(m[1])}</li>`;
-          } else {
-            if (inList) { html += '</ul>'; inList = false; }
-            if (line.trim()) html += `<p>${escHtml(line)}</p>`;
-          }
-        }
-        if (inList) html += '</ul>';
-        el.innerHTML = html;
-      } else {
-        el.textContent = text;
-      }
-    }
+    renderSources(data.sources || {});
+    renderScreenshot(data.screenshot_url || null);
 
-    renderBody('what-is-this',   syn.what_is_this);
-    renderBody('what-it-does',   syn.what_it_does);
-    renderBody('what-it-touches',syn.what_it_touches);
-    renderBody('what-to-do',     syn.what_to_do);
+    renderBody('what-is-this',    syn.what_is_this);
+    renderBody('what-it-does',    syn.what_it_does);
+    renderBody('what-it-touches', syn.what_it_touches);
+    renderBody('what-to-do',      syn.what_to_do);
 
     show('result-card');
-  }
-
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   function showError(msg) {
@@ -431,6 +585,8 @@
     $('error-message').textContent = msg;
     show('error-state');
   }
+
+  // ── Analysis flow ──
 
   async function runAnalysis() {
     const value = $('input-value').value.trim();
@@ -506,19 +662,16 @@
   $('input-value').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runAnalysis(); }
   });
-
   $('try-again-btn').addEventListener('click', () => {
     hide('error-state');
     show('input-form');
   });
-
   $('analyze-another-btn').addEventListener('click', () => {
     hide('result-card');
     $('input-value').value = '';
     show('input-form');
     history.pushState({}, '', '/');
   });
-
   $('copy-link-btn').addEventListener('click', () => {
     navigator.clipboard.writeText(window.location.href).then(() => {
       const el = $('copy-confirm');

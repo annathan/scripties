@@ -55,6 +55,8 @@ async def api_lookup(req: LookupRequest):
         "input": value,
         "input_type": raw.get("input_type", "unknown"),
         "synthesis": synthesis,
+        "sources": raw.get("sources", {}),
+        "screenshot_url": raw.get("screenshot_url"),
     }
 
 
@@ -63,7 +65,15 @@ async def api_get_result(result_id: str):
     result = get_result(result_id)
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
-    return result
+    raw = result["raw_results"]
+    return {
+        "id": result["id"],
+        "input": result["input"],
+        "input_type": result["input_type"],
+        "synthesis": result["synthesis"],
+        "sources": raw.get("sources", {}),
+        "screenshot_url": raw.get("screenshot_url"),
+    }
 
 
 @app.get("/result/{result_id}")
