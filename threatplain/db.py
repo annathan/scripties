@@ -25,7 +25,7 @@ def init_db() -> None:
 
 
 def store_result(input_value: str, raw_results: dict, synthesis: dict) -> str:
-    result_id = secrets.token_urlsafe(6)
+    result_id = secrets.token_urlsafe(12)  # 96-bit entropy → 16-char URL-safe IDs
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO lookups (id, input, input_type, raw_results, synthesis, created_at) VALUES (?,?,?,?,?,?)",
