@@ -1,6 +1,24 @@
 # Lighting helpers — input booleans and selectors for lighting automations.
 # Loaded automatically via packages/ directory.
 
+# ── Hardware notes — dimmer compatibility (resolved Jun 2026) ─────────────────
+# The house's downlights (HPM LDLE90TRIWE, 7W) connect to the ceiling wiring
+# loom via roof-space quick-connect plugs — that's normal AU electrician
+# practice and has no bearing on the wall switch, which is still a regular
+# hard-wired mains switch. That's exactly where an in-wall Zigbee dimmer
+# mechanism is fitted, so the original dimmer-at-the-switch plan is unaffected.
+#
+# Confirmed dimmer: Mercator Ikuü Zigbee Dimmer Mechanism (SSWM-DIMZ).
+#   - It's a trailing-edge dimmer, matching the HPM downlights' spec
+#     ("Dimmable with trailing edge dimmer only") — no compatibility issue.
+#   - No neutral wire required at the switch.
+#   - Needs an 11W+ combined dimmable load to calibrate correctly. Each HPM
+#     downlight is only 7W, so any switch loop driving a SINGLE downlight
+#     (e.g. a small powder room) may fall short — flag these to the
+#     electrician to either gang them with a neighbouring circuit or use the
+#     lower-minimum rotary variant (SSWRM-ZB, ~5W min) instead. Loops with 2+
+#     downlights (14W+) are comfortably over the threshold.
+
 input_boolean:
   # ── School sick-day flags (reset automatically at midnight) ──────────────
   # Toggle ON from dashboard if a school kid is staying home.
