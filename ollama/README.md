@@ -9,16 +9,17 @@ A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-li
 ## Setup order
 
 ```
-1. Install Ubuntu         → ubuntu install + NVIDIA drivers
-2. Harden the server      → harden.sh
-3. Start the stack        → setup.sh
-4. System prompt          → paste system-prompt.txt into Admin Panel
-5. Google sign-in         → .env + Google Cloud Console
-6. Install as an app      → PWA in Chrome/Safari
-7. Web search             → SearXNG (already in stack, enable in Admin Panel)
-8. Feature requests       → tools/feature-request.py + ntfy app on your phone
-9. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
-10. Remote access         → Entra App Proxy or Cloudflare Tunnel (when ready)
+1.  Install Ubuntu         → ubuntu install + NVIDIA drivers
+2.  Harden the server      → harden.sh
+3.  Start the stack        → setup.sh
+4.  System prompt          → paste system-prompt.txt into Admin Panel
+5.  Google sign-in         → .env + Google Cloud Console
+6.  Install as an app      → PWA in Chrome/Safari
+7.  Web search             → SearXNG (already in stack, enable in Admin Panel)
+8.  Feature requests       → tools/feature-request.py + ntfy app on your phone
+9.  Home automation        → tools/home-assistant.py + home-automation/packages/llm_conversation.yaml
+10. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
+11. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
 ```
 
 ---
@@ -251,6 +252,63 @@ If the user asks you to tell Drew something or request a feature, use the send_f
 ### How it works
 
 Jess types anything like *"this is great but can you tell Drew I'd like it to read responses aloud?"* — the model calls the tool, you get a notification on your phone with her exact request.
+
+---
+
+## Part 9 — Home Automation Integration
+
+Two parts: a chat tool so Jess can ask about and control the house directly in chat, and a package that wires HA's voice assistant up to Ollama.
+
+### Chat tool — query and control HA from Open WebUI
+
+`tools/home-assistant.py` is an Open WebUI tool that hits the HA REST API. Jess can type things like:
+
+- *"Is the front door locked?"*
+- *"Turn off the pool pump"*
+- *"How much solar are we generating right now?"*
+- *"Close the garage door"*
+
+**Install:**
+
+1. In HA, go to **Profile → Security → Long-lived access tokens → Create token** — copy it somewhere safe
+2. In Open WebUI: **Admin Panel → Tools → + (Add Tool)**
+3. Paste the contents of `tools/home-assistant.py`
+4. In **Valves**, set:
+   - `ha_url`: `http://192.168.x.x:8123` (your HA LAN IP)
+   - `ha_token`: the token you just generated
+5. Save and enable the tool
+
+The model will call it automatically when you ask about any home state or ask it to control a device.
+
+---
+
+### Morning briefing — HA calls Ollama for a daily summary
+
+`home-automation/packages/llm_conversation.yaml` adds a `rest_command.ollama_chat` that any HA automation can use, plus a `script.morning_home_briefing` that runs at 7:30am on weekdays.
+
+The script sends current solar production, pool and hot water state, and outdoor temperature to Ollama, which turns them into a 2–3 sentence push notification in plain English.
+
+**Install:**
+
+1. Edit `home-automation/packages/llm_conversation.yaml` — replace `<your-garage-pc-ip>` with the LAN IP of the Ollama server
+2. Drop the file into your HA `packages/` directory (or include the `automation:` and `script:` and `rest_command:` blocks in your `configuration.yaml`)
+3. HA → Developer Tools → YAML → Reload All YAML
+4. Update the entity names in `script.morning_home_briefing` to match your actual HA entities
+
+---
+
+### Voice assistant — use Ollama as HA's conversation brain
+
+This lets you say *"Hey Google, ask Home Assistant to turn on the pool pump"* and have Ollama decide what to do instead of HA's built-in intent matcher.
+
+**Setup (HA UI):**
+
+1. **Settings → Devices & Services → Add Integration → OpenAI Conversation**
+2. Set:
+   - **API Key:** `ollama` (any non-empty string — Ollama ignores it)
+   - **Base URL:** `http://<your-garage-pc-ip>:11434/v1`
+   - **Model:** `llama3.1:8b`
+3. **Settings → Voice Assistants** → edit your assistant → set **Conversation agent** to the OpenAI Conversation entry you just created
 
 ---
 
