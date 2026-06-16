@@ -1,0 +1,33 @@
+name: "Family Organizer"
+description: "Skylight-inspired family dashboard for Echo Show 15 with Apple Calendar integration"
+version: "1.0.0"
+slug: "family_organizer"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+map:
+  - config:ro
+options:
+  weather_entity: "weather.home"
+  calendars: []
+  school_calendar: ""
+  timezone: "Australia/Sydney"
+  port: 7123
+schema:
+  weather_entity: str
+  calendars:
+    - str
+  school_calendar: str
+  timezone: str
+  port: int
+ports:
+  7123/tcp: 7123
+ports_description:
+  7123/tcp: "Family Organizer Dashboard"
+webui: "http://[HOST]:[PORT:7123]"
+panel_icon: mdi:calendar-heart
+panel_title: "Family"

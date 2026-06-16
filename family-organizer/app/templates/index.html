@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0">
+  <title>Family Organizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ── Header ── -->
+    <header class="header">
+      <div class="header-date" id="date">—</div>
+
+      <div class="header-logo">
+        <span class="logo-icon">🏠</span>
+        <span class="logo-text">Family</span>
+      </div>
+
+      <div class="header-right">
+        <div class="weather" id="weather">
+          <span class="wi" id="wi">—</span>
+          <div class="weather-meta">
+            <span class="wtemp" id="wtemp">—</span>
+            <span class="wcond" id="wcond">—</span>
+          </div>
+        </div>
+        <div class="clock" id="clock">00:00</div>
+      </div>
+    </header>
+
+    <!-- ── Body ── -->
+    <div class="body">
+
+      <!-- Left: week + affirmation -->
+      <aside class="left-panel">
+        <div class="lp-top">
+          <p class="section-label">This Week</p>
+          <div class="week-grid" id="weekGrid"></div>
+        </div>
+
+        <div class="affirmation" id="affirmationBox">
+          <span class="affirmation-icon">✨</span>
+          <p class="affirmation-text" id="affirmationText">—</p>
+        </div>
+      </aside>
+
+      <!-- Right: today / school / tomorrow -->
+      <main class="right-panel">
+
+        <section class="rp-section today-section">
+          <p class="section-label">Today</p>
+          <div class="event-list" id="todayList">
+            <p class="skeleton">Loading…</p>
+          </div>
+        </section>
+
+        <section class="rp-section school-section" id="schoolSection" style="display:none">
+          <p class="section-label" id="schoolLabel">School Today</p>
+          <div class="event-list" id="schoolList"></div>
+        </section>
+
+        <section class="rp-section tomorrow-section">
+          <p class="section-label">Tomorrow</p>
+          <div class="event-list" id="tomorrowList">
+            <p class="skeleton">Loading…</p>
+          </div>
+        </section>
+
+      </main>
+    </div><!-- /.body -->
+  </div><!-- /.app -->
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
