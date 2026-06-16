@@ -32,7 +32,8 @@ input_boolean:
 
 input_number:
   # How long (minutes) the front door stays unlocked after an arrival trigger
-  # before auto-relocking. Adjustable from the dashboard.
+  # before auto-relocking. Adjustable from the dashboard without code edits.
+  # The arrival automation starts timer.front_door_relock with this duration.
   front_door_auto_relock_delay:
     name: Front door auto-relock delay
     min: 1
@@ -69,3 +70,20 @@ input_number:
     initial: 3000
     unit_of_measurement: W
     icon: mdi:ev-station
+
+input_boolean:
+  # Set ON when the washing machine starts drawing significant power.
+  # The "finished" automation checks this flag instead of the current sensor
+  # value (which is already <5W by the time the trigger fires).
+  washing_machine_running:
+    name: Washing machine running
+    initial: false
+    icon: mdi:washing-machine
+
+timer:
+  # Started by the arrival automations with duration from front_door_auto_relock_delay.
+  # Persists across HA restarts, so the door will always relock even if HA restarts
+  # mid-countdown. A separate automation fires lock.lock when this timer finishes.
+  front_door_relock:
+    name: Front door relock timer
+    icon: mdi:lock-clock

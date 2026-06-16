@@ -2,12 +2,19 @@
 # Entity assumptions:
 #   lock.front_door       — Eufy lock via eufy_security HACS integration
 #   person.alice / bob    — HA Companion app trackers
+#   timer.front_door_relock — defined in packages/helpers.yaml
 #
 # Security note: GPS geofencing has ~10-50m accuracy. The Home zone
 # (75m radius) means the unlock can fire while you're still at the
-# street. The auto-relock delay and "was_away" guard mitigate this,
+# street. The auto-relock timer and "was_away" guard mitigate this,
 # but consider adding a push notification with a confirm/cancel action
 # if you want a manual approval step before unlocking.
+#
+# Relock approach: arrival automations start timer.front_door_relock with the
+# configured duration. A timer-based automation then does the actual lock call.
+# This is restart-safe — timers persist in HA storage, so if HA restarts during
+# the countdown the door will still relock when the timer fires. The old
+# approach (delay: in an action sequence) was lost on HA restart.
 
 # ── Arrival: unlock front door when a household member enters Home zone ───────
 
@@ -35,17 +42,20 @@
     - service: lock.unlock
       target:
         entity_id: lock.front_door
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.alice_was_away
+    - service: timer.start
+      target:
+        entity_id: timer.front_door_relock
+      data:
+        duration: "{{ (states('input_number.front_door_auto_relock_delay') | int) * 60 }}"
     - service: notify.notify
       data:
         title: "🔓 Front door unlocked"
         message: >
           Unlocked for Alice's arrival. Will re-lock in
           {{ states('input_number.front_door_auto_relock_delay') | int }} minutes.
-    - delay:
-        minutes: "{{ states('input_number.front_door_auto_relock_delay') | int }}"
-    - service: lock.lock
-      target:
-        entity_id: lock.front_door
 
 - alias: "Front Door - Unlock on arrival (Bob)"
   id: front_door_unlock_bob
@@ -71,19 +81,46 @@
     - service: lock.unlock
       target:
         entity_id: lock.front_door
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.bob_was_away
+    - service: timer.start
+      target:
+        entity_id: timer.front_door_relock
+      data:
+        duration: "{{ (states('input_number.front_door_auto_relock_delay') | int) * 60 }}"
     - service: notify.notify
       data:
         title: "🔓 Front door unlocked"
         message: >
           Unlocked for Bob's arrival. Will re-lock in
           {{ states('input_number.front_door_auto_relock_delay') | int }} minutes.
-    - delay:
-        minutes: "{{ states('input_number.front_door_auto_relock_delay') | int }}"
+
+# ── Relock: fires when the arrival timer expires ──────────────────────────────
+
+- alias: "Front Door - Relock after arrival timer"
+  id: front_door_relock_after_timer
+  trigger:
+    - platform: event
+      event_type: timer.finished
+      event_data:
+        entity_id: timer.front_door_relock
+  condition:
+    - condition: state
+      entity_id: lock.front_door
+      state: "unlocked"
+  action:
     - service: lock.lock
       target:
         entity_id: lock.front_door
+    - service: notify.notify
+      data:
+        title: "🔒 Front door locked"
+        message: "Re-locked after arrival."
 
 # ── Security: auto-lock if left unlocked for too long ────────────────────────
+# Safety net — catches cases where the door is unlocked by any other means
+# (manual unlock via app, keypad, etc.) and left open.
 
 - alias: "Front Door - Auto-lock if unlocked for 10 minutes"
   id: front_door_auto_lock_timeout
