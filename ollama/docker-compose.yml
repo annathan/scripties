@@ -8,6 +8,10 @@ services:
       - "11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_NUM_PARALLEL=1       # explicit; prevents VRAM overcommit
+      - OLLAMA_MAX_LOADED_MODELS=1  # one model in VRAM at a time; prevents fragmentation
+      - OLLAMA_MAX_QUEUE=20         # fail fast rather than queue indefinitely
+      - OLLAMA_KEEP_ALIVE=5m        # unload idle model after 5 min; reclaims VRAM between sessions
     deploy:
       resources:
         reservations:

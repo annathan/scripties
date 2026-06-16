@@ -384,6 +384,27 @@ Uncomment the `cloudflared` service in `docker-compose.yml`, then:
 
 ---
 
+## Why Ollama and not vLLM or llama.cpp?
+
+Short answer: Ollama is the right tool for this use case, and the alternatives are for different problems.
+
+vLLM and SGLang are for when a local model becomes backend infrastructure — serving agents, pointing multiple apps at the same API endpoint, or building enterprise-grade inference pipelines. The article that covers them most clearly says *"I wouldn't install either of these before getting acquainted with simpler tools"* and *"Ollama is still the tool I'd point someone to if they just want to get started."*
+
+llama.cpp is foundational (Ollama used to run on top of it) and gives you ~10–15% more throughput with fine-grained memory control. The tradeoff is that you lose model management, the Open WebUI integration, and the easy Docker setup — not worth it for a family chat assistant.
+
+ExLlamaV3 squeezes more out of consumer GPUs specifically, but requires building your own serving layer from scratch.
+
+If the use case ever evolves into something that needs multi-app API serving or agent infrastructure, that's the point to revisit. For now, Ollama is the right fit.
+
+### VRAM fragmentation
+
+Ollama instances degrade after several days of continuous uptime — response times creep up as GPU memory fragments. The stack mitigates this two ways:
+
+- **Env vars** (`OLLAMA_KEEP_ALIVE=5m`, `OLLAMA_MAX_LOADED_MODELS=1`) — model unloads when idle and only one model occupies VRAM at a time
+- **Daily restart timer** — `setup.sh` registers a systemd timer that restarts just the `ollama` container at 3am. Open WebUI reconnects automatically on the next request, so there's no visible interruption.
+
+---
+
 ## Troubleshooting
 
 **GPU not being used:**
