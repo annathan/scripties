@@ -62,6 +62,44 @@ services:
       - portainer_data:/data
     restart: unless-stopped
 
+  # ── SGLang — swap in when agents/home-automation integration needs more throughput ──
+  # SGLang replaces Ollama as the inference backend. Open WebUI and Home Assistant
+  # point to its OpenAI-compatible API on port 30000 instead of Ollama's 11434.
+  #
+  # IMPORTANT: SGLang uses HuggingFace safetensors format, NOT Ollama's GGUF models.
+  # Download a model first:
+  #   docker run --rm -v sglang_models:/models huggingface/transformers-cli \
+  #     download meta-llama/Meta-Llama-3.1-8B-Instruct --local-dir /models/llama3.1-8b
+  #
+  # When to switch: multiple concurrent agent runs, home automation hitting the API
+  # repeatedly, or tool calls returning malformed JSON. SGLang's prefix caching and
+  # enforced structured outputs solve all three.
+  #
+  # sglang:
+  #   image: lmsysorg/sglang:latest
+  #   container_name: sglang
+  #   volumes:
+  #     - sglang_models:/models
+  #   ports:
+  #     - "30000:30000"
+  #   environment:
+  #     - CUDA_VISIBLE_DEVICES=0
+  #   command: >
+  #     python -m sglang.launch_server
+  #     --model-path /models/llama3.1-8b
+  #     --host 0.0.0.0
+  #     --port 30000
+  #     --mem-fraction-static 0.85
+  #     --enable-torch-compile
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   restart: unless-stopped
+
   # Cloudflare Tunnel — uncomment and set CLOUDFLARE_TUNNEL_TOKEN in .env for school access
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
@@ -77,3 +115,4 @@ volumes:
   ollama_data:
   webui_data:
   portainer_data:
+  sglang_models:  # pre-created; only used if SGLang service is uncommented
