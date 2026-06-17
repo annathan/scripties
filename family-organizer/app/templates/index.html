@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0">
+  <title>Family Organizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- ── Weather particle overlay ── -->
+  <div id="weather-fx" aria-hidden="true"></div>
+
+  <!-- ── Photo screensaver (activates after 3 min idle) ── -->
+  <div id="screensaver" class="screensaver" style="display:none" role="button" aria-label="Tap to return to dashboard">
+    <div class="ss-photo" id="ssPhoto"></div>
+    <div class="ss-grad"></div>
+    <div class="ss-ui">
+      <div class="ss-time" id="ssTime">00:00</div>
+      <div class="ss-date" id="ssDate">—</div>
+      <div class="ss-hint">Tap to continue</div>
+    </div>
+  </div>
+
+  <!-- ── App shell ── -->
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header-date" id="date">—</div>
+
+      <div class="header-logo">
+        <span class="logo-icon">🏠</span>
+        <span class="logo-text">Family</span>
+      </div>
+
+      <div class="header-right">
+        <div class="weather" id="weather">
+          <span class="wi" id="wi">—</span>
+          <div class="weather-meta">
+            <span class="wtemp" id="wtemp">—</span>
+            <span class="wcond" id="wcond">—</span>
+          </div>
+        </div>
+        <div class="clock" id="clock">00:00</div>
+      </div>
+    </header>
+
+    <!-- Leaving soon banner (hidden until needed) -->
+    <div id="leaveBanner" class="leave-banner" style="display:none" aria-live="polite">
+      <span class="lb-icon">🚗</span>
+      <div class="lb-body">
+        <div class="lb-event" id="lbEvent">—</div>
+        <div class="lb-loc"  id="lbLoc">—</div>
+      </div>
+      <div class="lb-timer" id="lbTimer">—</div>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+
+      <!-- Left panel: week overview + countdown + affirmation -->
+      <aside class="left-panel">
+        <div class="lp-top">
+          <p class="section-label">This Week</p>
+          <div class="week-grid" id="weekGrid"></div>
+        </div>
+
+        <!-- NSW school term countdown -->
+        <div class="countdown-card" id="countdownCard" style="display:none">
+          <div class="cd-header">
+            <span id="cdIcon">📚</span>
+            <span id="cdLabel">—</span>
+          </div>
+          <div class="cd-main">
+            <span class="cd-num" id="cdNum">—</span>
+            <span class="cd-unit" id="cdUnit">days</span>
+          </div>
+          <div class="cd-bar-track"><div class="cd-bar-fill" id="cdBarFill"></div></div>
+          <div class="cd-footer" id="cdFooter"></div>
+        </div>
+
+        <div class="affirmation" id="affirmationBox">
+          <span class="affirmation-icon">✨</span>
+          <p class="affirmation-text" id="affirmationText">—</p>
+        </div>
+      </aside>
+
+      <!-- Right panel: today / school / chores / tomorrow -->
+      <main class="right-panel">
+
+        <section class="rp-section today-section">
+          <p class="section-label">Today</p>
+          <div class="event-list" id="todayList">
+            <p class="skeleton">Loading…</p>
+          </div>
+        </section>
+
+        <section class="rp-section school-section" id="schoolSection" style="display:none">
+          <p class="section-label" id="schoolLabel">School Today</p>
+          <div class="event-list" id="schoolList"></div>
+        </section>
+
+        <section class="rp-section chores-section" id="choresSection" style="display:none">
+          <p class="section-label">Chores</p>
+          <div id="choresList"></div>
+        </section>
+
+        <section class="rp-section tomorrow-section">
+          <p class="section-label">Tomorrow</p>
+          <div class="event-list" id="tomorrowList">
+            <p class="skeleton">Loading…</p>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
