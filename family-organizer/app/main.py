@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 import httpx
 from fastapi import FastAPI, Request
@@ -138,6 +138,99 @@ async def get_config():
         "school_calendar": SCHOOL_CALENDAR,
         "weather_entity": WEATHER_ENTITY,
     }
+
+
+# ── NSW DoE public school term dates ─────────────────────────────
+# Source: https://education.nsw.gov.au/public-schools/going-to-a-public-school/calendars-and-school-terms
+# Each entry: (short_label, full_label, term_start, term_end)
+_NSW_TERMS: list[tuple[str, str, date, date]] = [
+    ("Term 1",        "Term 1 · 2025",        date(2025, 1, 29),  date(2025, 4, 11)),
+    ("Term 2",        "Term 2 · 2025",        date(2025, 4, 29),  date(2025, 7, 4)),
+    ("Term 3",        "Term 3 · 2025",        date(2025, 7, 22),  date(2025, 9, 26)),
+    ("Term 4",        "Term 4 · 2025",        date(2025, 10, 13), date(2025, 12, 19)),
+    ("Term 1",        "Term 1 · 2026",        date(2026, 1, 28),  date(2026, 4, 9)),
+    ("Term 2",        "Term 2 · 2026",        date(2026, 4, 28),  date(2026, 7, 3)),
+    ("Term 3",        "Term 3 · 2026",        date(2026, 7, 21),  date(2026, 9, 25)),
+    ("Term 4",        "Term 4 · 2026",        date(2026, 10, 12), date(2026, 12, 18)),
+    ("Term 1",        "Term 1 · 2027",        date(2027, 1, 27),  date(2027, 4, 8)),
+    ("Term 2",        "Term 2 · 2027",        date(2027, 4, 27),  date(2027, 7, 2)),
+    ("Term 3",        "Term 3 · 2027",        date(2027, 7, 20),  date(2027, 9, 24)),
+    ("Term 4",        "Term 4 · 2027",        date(2027, 10, 11), date(2027, 12, 17)),
+]
+
+_HOL_NAMES = {
+    "Term 1": "Easter Holidays",
+    "Term 2": "Winter Holidays",
+    "Term 3": "Spring Holidays",
+    "Term 4": "Summer Holidays",
+}
+
+
+def _build_timeline() -> list[dict]:
+    """Expand term list into alternating term / holiday periods."""
+    periods: list[dict] = []
+    for i, (short, full, t_start, t_end) in enumerate(_NSW_TERMS):
+        periods.append({
+            "type": "term",
+            "label": full,
+            "short": short,
+            "start": t_start,
+            "end": t_end,
+        })
+        if i + 1 < len(_NSW_TERMS):
+            hol_start = t_end + timedelta(days=1)
+            hol_end = _NSW_TERMS[i + 1][2] - timedelta(days=1)
+            if hol_start <= hol_end:
+                hol_name = _HOL_NAMES.get(short, "School Holidays")
+                periods.append({
+                    "type": "holidays",
+                    "label": hol_name,
+                    "short": hol_name,
+                    "start": hol_start,
+                    "end": hol_end,
+                })
+    return periods
+
+
+@app.get("/api/countdown")
+async def get_countdown():
+    today = date.today()
+    timeline = _build_timeline()
+
+    current = next((p for p in timeline if p["start"] <= today <= p["end"]), None)
+    upcoming = [p for p in timeline if p["start"] > today]
+    nxt = upcoming[0] if upcoming else None
+
+    def _fmt(d: date) -> str:
+        return d.strftime("%-d %b")
+
+    if current:
+        span = (current["end"] - current["start"]).days or 1
+        progress = (today - current["start"]).days / span
+        days_left = (current["end"] - today).days
+        return {
+            "status": current["type"],
+            "label": current["label"],
+            "short": current["short"],
+            "days_left": days_left,
+            "progress": round(progress, 3),
+            "next_label": nxt["label"] if nxt else None,
+            "next_start": _fmt(nxt["start"]) if nxt else None,
+        }
+
+    if nxt:
+        # Between data ranges (e.g. very start of year before Term 1)
+        return {
+            "status": "break",
+            "label": "School Break",
+            "short": "Break",
+            "days_left": (nxt["start"] - today).days,
+            "progress": 0.0,
+            "next_label": nxt["label"],
+            "next_start": _fmt(nxt["start"]),
+        }
+
+    return {"status": "unknown"}
 
 
 if __name__ == "__main__":

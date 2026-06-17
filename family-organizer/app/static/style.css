@@ -189,6 +189,84 @@ body {
   opacity: 0.85;
 }
 
+/* ── Countdown card ── */
+.countdown-card {
+  flex-shrink: 0;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+}
+
+.countdown-card.is-hols {
+  background: #FFFBEB;
+  border-color: #FDE68A;
+}
+
+.countdown-card.is-summer {
+  background: #FFF0F6;
+  border-color: #FBCFE8;
+}
+
+.cd-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4338CA;
+  margin-bottom: 10px;
+}
+
+.countdown-card.is-hols  .cd-header { color: #92400E; }
+.countdown-card.is-summer .cd-header { color: #9D174D; }
+
+.cd-header span:first-child { font-size: 18px; }
+
+.cd-main { line-height: 1; margin-bottom: 10px; }
+
+.cd-num {
+  font-size: 40px;
+  font-weight: 700;
+  color: #3730A3;
+  display: inline;
+}
+
+.countdown-card.is-hols   .cd-num { color: #92400E; }
+.countdown-card.is-summer .cd-num { color: #9D174D; }
+
+.cd-unit {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-left: 6px;
+}
+
+.cd-bar-track {
+  height: 4px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.cd-bar-fill {
+  height: 100%;
+  background: #4C6EF5;
+  border-radius: 2px;
+  transition: width 0.9s ease;
+}
+
+.countdown-card.is-hols   .cd-bar-fill { background: #F59F00; }
+.countdown-card.is-summer .cd-bar-fill { background: #E64980; }
+
+.cd-footer {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 /* ── Affirmation ── */
 .affirmation {
   flex-shrink: 0;

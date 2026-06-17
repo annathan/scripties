@@ -295,6 +295,46 @@ async function loadWeather() {
   }
 }
 
+async function loadCountdown() {
+  try {
+    const r = await fetch('/api/countdown');
+    const d = await r.json();
+    if (!d.status || d.status === 'unknown') return;
+
+    const card = document.getElementById('countdownCard');
+    card.style.display = '';
+    card.className = 'countdown-card';
+
+    const isSummer = d.label?.includes('Summer');
+    const isHols   = d.status === 'holidays' || d.status === 'break';
+    if (isHols && isSummer) card.classList.add('is-summer');
+    else if (isHols)        card.classList.add('is-hols');
+
+    const icons = { term: '📚', holidays: '🌴', break: '🏖️' };
+    document.getElementById('cdIcon').textContent  = icons[d.status] ?? '📅';
+    document.getElementById('cdLabel').textContent = d.label ?? '—';
+    document.getElementById('cdNum').textContent   = d.days_left ?? '—';
+    document.getElementById('cdBarFill').style.width = `${Math.round((d.progress ?? 0) * 100)}%`;
+
+    // Unit text: varies by state and singular/plural
+    const n = d.days_left ?? 0;
+    let unit;
+    if (d.status === 'term') {
+      unit = n === 1 ? 'day until holidays' : 'days until holidays';
+    } else {
+      unit = n === 1 ? 'day until school' : 'days until school';
+    }
+    document.getElementById('cdUnit').textContent = unit;
+
+    const footer = document.getElementById('cdFooter');
+    if (d.next_label && d.next_start) {
+      footer.textContent = `Then: ${d.next_label} · ${d.next_start}`;
+    } else {
+      footer.textContent = '';
+    }
+  } catch {}
+}
+
 async function loadAffirmation() {
   try {
     const r = await fetch('/api/affirmation');
@@ -361,9 +401,11 @@ setInterval(tick, 1000);
 loadWeather();
 loadAffirmation();
 loadEvents();
+loadCountdown();
 
 // Refresh data every 5 minutes
 setInterval(loadWeather, 5 * 60 * 1000);
 setInterval(loadEvents,  5 * 60 * 1000);
-// Affirmation rotates daily; re-check hourly near midnight
+// Countdown and affirmation only change day-to-day
+setInterval(loadCountdown,   60 * 60 * 1000);
 setInterval(loadAffirmation, 60 * 60 * 1000);
