@@ -89,7 +89,39 @@ else
     ok "systemd service already exists"
 fi
 
-# --- 6. Wait for Ollama ---
+# --- 6. Daily ollama restart timer (clears VRAM fragmentation) ---
+step "Registering daily Ollama restart timer"
+RESTART_SVC="/etc/systemd/system/ollama-restart.service"
+RESTART_TMR="/etc/systemd/system/ollama-restart.timer"
+if [[ ! -f "$RESTART_TMR" ]]; then
+    sudo tee "$RESTART_SVC" > /dev/null <<EOF
+[Unit]
+Description=Daily Ollama container restart (clears VRAM fragmentation)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker restart ollama
+EOF
+    sudo tee "$RESTART_TMR" > /dev/null <<EOF
+[Unit]
+Description=Restart Ollama daily at 3am
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now ollama-restart.timer
+    ok "Ollama will restart daily at 3am to clear VRAM fragmentation"
+else
+    ok "Restart timer already registered"
+fi
+
+# --- 7. Wait for Ollama ---
 step "Waiting for Ollama to be ready"
 MAX=60; WAITED=0
 until curl -sf http://localhost:11434 &>/dev/null; do
@@ -99,7 +131,7 @@ until curl -sf http://localhost:11434 &>/dev/null; do
 done
 ok "Ollama is ready"
 
-# --- 7. Pull model ---
+# --- 8. Pull model ---
 step "Pulling llama3.1:8b (first run will download ~5 GB)"
 docker exec ollama ollama pull llama3.1:8b
 ok "Model ready"

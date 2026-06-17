@@ -1,8 +1,7 @@
 use_default_settings: true
 
 server:
-  # Generate a value with: openssl rand -hex 32
-  secret_key: "${SEARXNG_SECRET_KEY}"
+  # Secret key is set via SEARXNG_SECRET_KEY environment variable in docker-compose.yml
   limiter: false
   image_proxy: false
   port: 8080

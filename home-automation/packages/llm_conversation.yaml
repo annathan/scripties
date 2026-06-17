@@ -1,0 +1,107 @@
+# Home Assistant ↔ Ollama LLM integration
+#
+# This package wires up two things:
+#   1. HA conversation agent  — lets voice assistants (Google, Alexa, HA Assist)
+#      use Ollama as the brain for natural-language home control commands.
+#   2. REST commands + scripts — lets HA automations call Ollama proactively
+#      (e.g. a morning briefing that summarises the day's solar forecast and
+#      calendar events in plain English).
+#
+# ── Part 1: Conversation agent (UI setup) ─────────────────────────────────────
+#
+# The openai_conversation integration supports any OpenAI-compatible endpoint.
+# Ollama exposes one on port 11434. Set it up in the HA UI:
+#
+#   Settings → Devices & Services → Add Integration → OpenAI Conversation
+#
+#   API Key:      ollama          (any non-empty string; Ollama ignores it)
+#   Base URL:     http://<your-garage-pc-ip>:11434/v1
+#   Model:        llama3.1:8b     (or whichever model you've pulled)
+#
+# Then wire it to HA Assist:
+#   Settings → Voice Assistants → Edit your assistant → Conversation agent
+#   → select "OpenAI Conversation" (the one you just added)
+#
+# You can now say "Hey Google, ask Home Assistant to turn on the pool pump"
+# and HA will route the text through Ollama before acting.
+#
+# ── Part 2: REST commands for automation-driven Ollama calls ──────────────────
+#
+# These let automations send a prompt to Ollama and use the response.
+# Replace <your-garage-pc-ip> with the LAN IP of the PC running Ollama.
+
+rest_command:
+  ollama_chat:
+    url: "http://<your-garage-pc-ip>:11434/v1/chat/completions"
+    method: POST
+    content_type: "application/json"
+    payload: >
+      {
+        "model": "{{ model | default('llama3.1:8b') }}",
+        "messages": [
+          {
+            "role": "system",
+            "content": "{{ system_prompt | default('You are a helpful home assistant. Be concise — your response will be read as a push notification.') }}"
+          },
+          {
+            "role": "user",
+            "content": "{{ prompt }}"
+          }
+        ],
+        "stream": false,
+        "temperature": 0.3
+      }
+
+# ── Part 3: Morning briefing script ──────────────────────────────────────────
+#
+# Calls Ollama at 7:30am with key home sensor states. Ollama summarises
+# them into a short plain-English push notification.
+#
+# Sensors used (update entity names to match your setup):
+#   sensor.goodwe_pv_power          — current solar production
+#   sensor.solcast_forecast_today   — Solcast day-ahead forecast (kWh)
+#   sensor.outside_temperature      — weather station or Met Office integration
+#   sensor.electricity_price        — Amber Electric or similar TOU tariff
+
+script:
+  morning_home_briefing:
+    alias: "Morning home briefing via Ollama"
+    sequence:
+      - service: rest_command.ollama_chat
+        data:
+          prompt: >
+            Summarise today's home situation in 2–3 sentences, natural tone, no jargon.
+            Solar forecast: {{ states('sensor.solcast_forecast_today') }} kWh.
+            Current production: {{ states('sensor.goodwe_pv_power') }} W.
+            Outside temperature: {{ states('sensor.outside_temperature') }}°C.
+            Pool pump is {{ states('switch.pool_pump_high_speed') }}.
+            Hot water boost is {{ states('switch.hot_water_boost') }}.
+          system_prompt: >
+            You are a concise home assistant. Give a 2–3 sentence briefing
+            suitable for a push notification. Plain English, no bullet points,
+            no AI-style flourishes.
+        response_variable: briefing_response
+      - service: notify.notify
+        data:
+          title: "🏡 Morning briefing"
+          message: >
+            {{ briefing_response['content']['choices'][0]['message']['content'] }}
+
+# ── Part 4: Automation — run the briefing each morning ───────────────────────
+
+automation:
+  - alias: "LLM - Morning home briefing"
+    id: llm_morning_briefing
+    trigger:
+      - platform: time
+        at: "07:30:00"
+    condition:
+      - condition: time
+        weekday:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+    action:
+      - service: script.morning_home_briefing
