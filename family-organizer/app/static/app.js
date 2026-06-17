@@ -120,6 +120,162 @@ function renderWeek(events, today) {
   document.getElementById('weekGrid').innerHTML = html;
 }
 
+// ── Weather Easter Egg effects ────────────────────────────────────
+const WeatherFX = {
+  el: null,
+  _lightningTimer: null,
+
+  init() { this.el = document.getElementById('weather-fx'); },
+
+  clear() {
+    if (this.el) this.el.innerHTML = '';
+    clearTimeout(this._lightningTimer);
+    this._lightningTimer = null;
+    document.body.removeAttribute('data-wx');
+  },
+
+  set(condition) {
+    this.clear();
+    document.body.dataset.wx = condition;
+    switch (condition) {
+      case 'rainy':            this._rain(55);            break;
+      case 'pouring':          this._rain(110);           break;
+      case 'lightning-rainy':  this._rain(80); this._lightning(); break;
+      case 'snowy':            this._snow(45);            break;
+      case 'snowy-rainy':      this._snow(30); this._rain(30);   break;
+      case 'hail':             this._hail(65);            break;
+      case 'sunny':            this._sun();               break;
+      case 'clear-night':      this._stars(35);           break;
+      case 'fog':              this._fog();               break;
+      case 'windy':
+      case 'windy-variant':    this._wind(10);            break;
+      case 'partlycloudy':     this._clouds(3);           break;
+      case 'cloudy':           this._clouds(6);           break;
+    }
+  },
+
+  _mk(cls, css) {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.style.cssText = css;
+    this.el.appendChild(el);
+    return el;
+  },
+
+  _rain(n) {
+    for (let i = 0; i < n; i++) {
+      this._mk('wx-rain', `
+        left:${(Math.random() * 105).toFixed(1)}%;
+        height:${(14 + Math.random() * 18).toFixed(0)}px;
+        animation-duration:${(0.35 + Math.random() * 0.35).toFixed(2)}s;
+        animation-delay:${(Math.random() * 2).toFixed(2)}s;
+        opacity:${(0.25 + Math.random() * 0.35).toFixed(2)};
+      `);
+    }
+  },
+
+  _hail(n) {
+    for (let i = 0; i < n; i++) {
+      this._mk('wx-hail', `
+        left:${(Math.random() * 100).toFixed(1)}%;
+        animation-duration:${(0.45 + Math.random() * 0.4).toFixed(2)}s;
+        animation-delay:${(Math.random() * 2).toFixed(2)}s;
+        opacity:${(0.35 + Math.random() * 0.4).toFixed(2)};
+      `);
+    }
+  },
+
+  _snow(n) {
+    for (let i = 0; i < n; i++) {
+      const sz = (4 + Math.random() * 9).toFixed(1);
+      this._mk('wx-snow', `
+        left:${(Math.random() * 100).toFixed(1)}%;
+        width:${sz}px; height:${sz}px;
+        --drift:${(-40 + Math.random() * 80).toFixed(0)}px;
+        animation-duration:${(3 + Math.random() * 4).toFixed(2)}s;
+        animation-delay:${(Math.random() * 5).toFixed(2)}s;
+      `);
+    }
+  },
+
+  _sun() {
+    this._mk('wx-sun', '');
+    for (let i = 0; i < 7; i++) {
+      this._mk('wx-sparkle', `
+        top:${(8 + Math.random() * 35).toFixed(0)}%;
+        right:${(4 + Math.random() * 28).toFixed(0)}%;
+        animation-duration:${(1.8 + Math.random() * 2.4).toFixed(2)}s;
+        animation-delay:${(Math.random() * 3).toFixed(2)}s;
+      `);
+    }
+  },
+
+  _stars(n) {
+    for (let i = 0; i < n; i++) {
+      const sz = (1.5 + Math.random() * 3).toFixed(1);
+      this._mk('wx-star', `
+        top:${(Math.random() * 85).toFixed(1)}%;
+        left:${(Math.random() * 100).toFixed(1)}%;
+        width:${sz}px; height:${sz}px;
+        animation-duration:${(1.2 + Math.random() * 3.5).toFixed(2)}s;
+        animation-delay:${(Math.random() * 5).toFixed(2)}s;
+      `);
+    }
+  },
+
+  _lightning() {
+    const flash = this._mk('wx-lightning', '');
+    const trigger = () => {
+      // double-flash pattern like real lightning
+      flash.style.opacity = '1';
+      setTimeout(() => { flash.style.opacity = '0';
+        setTimeout(() => { flash.style.opacity = '1';
+          setTimeout(() => { flash.style.opacity = '0';
+            this._lightningTimer = setTimeout(trigger, 4000 + Math.random() * 8000);
+          }, 70);
+        }, 55);
+      }, 80);
+    };
+    this._lightningTimer = setTimeout(trigger, 800 + Math.random() * 3000);
+  },
+
+  _fog() {
+    for (let i = 0; i < 4; i++) {
+      this._mk('wx-fog', `
+        top:${(12 + i * 21).toFixed(0)}%;
+        animation-duration:${(18 + i * 6).toFixed(0)}s;
+        animation-delay:${(-i * 7).toFixed(0)}s;
+        opacity:${(0.14 + i * 0.04).toFixed(2)};
+      `);
+    }
+  },
+
+  _wind(n) {
+    for (let i = 0; i < n; i++) {
+      this._mk('wx-wind', `
+        top:${(8 + Math.random() * 82).toFixed(0)}%;
+        width:${(70 + Math.random() * 140).toFixed(0)}px;
+        animation-duration:${(1.2 + Math.random() * 2).toFixed(2)}s;
+        animation-delay:${(Math.random() * 4).toFixed(2)}s;
+        opacity:${(0.14 + Math.random() * 0.22).toFixed(2)};
+      `);
+    }
+  },
+
+  _clouds(n) {
+    for (let i = 0; i < n; i++) {
+      this._mk('wx-cloud', `
+        top:${(4 + Math.random() * 28).toFixed(0)}%;
+        animation-duration:${(28 + i * 8).toFixed(0)}s;
+        animation-delay:${(-i * 12).toFixed(0)}s;
+        opacity:${(0.05 + Math.random() * 0.07).toFixed(2)};
+        transform-origin: center;
+        transform: scale(${(0.7 + Math.random() * 0.9).toFixed(2)});
+      `);
+    }
+  },
+};
+
 // ── Data loading ──────────────────────────────────────────────────
 async function loadWeather() {
   try {
@@ -133,6 +289,7 @@ async function loadWeather() {
     document.getElementById('wi').textContent = emoji;
     document.getElementById('wtemp').textContent = temp != null ? `${Math.round(temp)}${unit}` : '—';
     document.getElementById('wcond').textContent = cond;
+    WeatherFX.set(d.state);
   } catch {
     // silently ignore; weather not critical
   }
@@ -197,6 +354,7 @@ async function loadEvents() {
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────
+WeatherFX.init();
 tick();
 setInterval(tick, 1000);
 
