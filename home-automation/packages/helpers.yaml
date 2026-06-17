@@ -24,6 +24,10 @@ input_boolean:
     initial: false
     icon: mdi:account-arrow-left
 
+  # ── Lighting ──────────────────────────────────────────────────────────────
+  # Movie mode and colour party are defined in packages/lighting_helpers.yaml
+  # to keep lighting-specific helpers together.
+
   # Solar surplus automations master switch
   solar_surplus_automations_enabled:
     name: Solar surplus automations enabled
