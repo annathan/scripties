@@ -1,6 +1,6 @@
 name: "Family Organizer"
 description: "Skylight-inspired family dashboard for Echo Show 15 with Apple Calendar integration"
-version: "1.0.0"
+version: "1.1.0"
 slug: "family_organizer"
 init: false
 arch:
@@ -11,10 +11,14 @@ arch:
   - i386
 map:
   - config:ro
+  - media:ro
 options:
   weather_entity: "weather.home"
   calendars: []
   school_calendar: ""
+  chore_lists: []
+  photos_path: "family-photos"
+  leave_soon_minutes: 25
   timezone: "Australia/Sydney"
   port: 7123
 schema:
@@ -22,6 +26,10 @@ schema:
   calendars:
     - str
   school_calendar: str
+  chore_lists:
+    - str
+  photos_path: str
+  leave_soon_minutes: int
   timezone: str
   port: int
 ports:

@@ -9,12 +9,25 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <!-- weather particle overlay — pointer-events: none so nothing is blocked -->
+
+  <!-- ── Weather particle overlay ── -->
   <div id="weather-fx" aria-hidden="true"></div>
 
+  <!-- ── Photo screensaver (activates after 3 min idle) ── -->
+  <div id="screensaver" class="screensaver" style="display:none" role="button" aria-label="Tap to return to dashboard">
+    <div class="ss-photo" id="ssPhoto"></div>
+    <div class="ss-grad"></div>
+    <div class="ss-ui">
+      <div class="ss-time" id="ssTime">00:00</div>
+      <div class="ss-date" id="ssDate">—</div>
+      <div class="ss-hint">Tap to continue</div>
+    </div>
+  </div>
+
+  <!-- ── App shell ── -->
   <div class="app">
 
-    <!-- ── Header ── -->
+    <!-- Header -->
     <header class="header">
       <div class="header-date" id="date">—</div>
 
@@ -35,10 +48,20 @@
       </div>
     </header>
 
-    <!-- ── Body ── -->
+    <!-- Leaving soon banner (hidden until needed) -->
+    <div id="leaveBanner" class="leave-banner" style="display:none" aria-live="polite">
+      <span class="lb-icon">🚗</span>
+      <div class="lb-body">
+        <div class="lb-event" id="lbEvent">—</div>
+        <div class="lb-loc"  id="lbLoc">—</div>
+      </div>
+      <div class="lb-timer" id="lbTimer">—</div>
+    </div>
+
+    <!-- Body -->
     <div class="body">
 
-      <!-- Left: week + affirmation -->
+      <!-- Left panel: week overview + countdown + affirmation -->
       <aside class="left-panel">
         <div class="lp-top">
           <p class="section-label">This Week</p>
@@ -65,7 +88,7 @@
         </div>
       </aside>
 
-      <!-- Right: today / school / tomorrow -->
+      <!-- Right panel: today / school / chores / tomorrow -->
       <main class="right-panel">
 
         <section class="rp-section today-section">
@@ -80,6 +103,11 @@
           <div class="event-list" id="schoolList"></div>
         </section>
 
+        <section class="rp-section chores-section" id="choresSection" style="display:none">
+          <p class="section-label">Chores</p>
+          <div id="choresList"></div>
+        </section>
+
         <section class="rp-section tomorrow-section">
           <p class="section-label">Tomorrow</p>
           <div class="event-list" id="tomorrowList">
@@ -88,8 +116,8 @@
         </section>
 
       </main>
-    </div><!-- /.body -->
-  </div><!-- /.app -->
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

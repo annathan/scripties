@@ -1,9 +1,11 @@
 import os
+import random
 from datetime import datetime, timedelta, date
+from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -15,9 +17,14 @@ HA_URL = os.getenv("HA_URL", "http://supervisor/core")
 HA_TOKEN = os.getenv("SUPERVISOR_TOKEN", os.getenv("HA_TOKEN", ""))
 WEATHER_ENTITY = os.getenv("WEATHER_ENTITY", "weather.home")
 SCHOOL_CALENDAR = os.getenv("SCHOOL_CALENDAR", "")
+PHOTOS_DIR = Path("/media") / os.getenv("PHOTOS_PATH", "family-photos")
+LEAVE_SOON_MINUTES = int(os.getenv("LEAVE_SOON_MINUTES", "25"))
 
 _cals_env = os.getenv("CALENDARS", "")
 CALENDARS = [c.strip() for c in _cals_env.split(",") if c.strip()] if _cals_env else []
+
+_chore_env = os.getenv("CHORE_LISTS", "")
+CHORE_LISTS = [c.strip() for c in _chore_env.split(",") if c.strip()] if _chore_env else []
 
 AFFIRMATIONS = [
     "You are doing an amazing job today!",
@@ -231,6 +238,83 @@ async def get_countdown():
         }
 
     return {"status": "unknown"}
+
+
+# ── Photos ────────────────────────────────────────────────────────
+_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+
+@app.get("/api/photos")
+async def list_photos():
+    if not PHOTOS_DIR.exists():
+        return {"photos": [], "hint": f"Put photos in HA media/{PHOTOS_DIR.name}/"}
+    files = [
+        f"/photo/{f.name}"
+        for f in PHOTOS_DIR.iterdir()
+        if f.is_file() and f.suffix.lower() in _PHOTO_EXTS
+    ]
+    random.shuffle(files)
+    return {"photos": files}
+
+
+@app.get("/photo/{filename}")
+async def serve_photo(filename: str):
+    # Resolve only the filename part to prevent path traversal
+    path = PHOTOS_DIR / Path(filename).name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(path)
+
+
+# ── Chores (HA todo lists, syncs with Apple Reminders) ───────────
+@app.get("/api/chores")
+async def get_chores():
+    if not CHORE_LISTS:
+        return {"lists": []}
+
+    result: list[dict] = []
+    async with httpx.AsyncClient(timeout=10) as client:
+        for entity_id in CHORE_LISTS:
+            try:
+                # HA 2023.6+ supports return_response on service calls
+                r = await client.post(
+                    f"{HA_URL}/api/services/todo/get_items?return_response=true",
+                    json={"entity_id": entity_id},
+                    headers=_ha_headers(),
+                )
+                if r.status_code == 200:
+                    items = r.json().get(entity_id, {}).get("items", [])
+                    name = entity_id.replace("todo.", "").replace("_", " ").title()
+                    result.append({"entity_id": entity_id, "name": name, "items": items})
+            except Exception:
+                pass
+
+    return {"lists": result}
+
+
+@app.post("/api/chores/complete")
+async def complete_chore(request: Request):
+    body = await request.json()
+    entity_id = body.get("entity_id", "")
+    uid = body.get("uid", "")
+    if not entity_id or not uid:
+        raise HTTPException(status_code=400, detail="entity_id and uid required")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            r = await client.post(
+                f"{HA_URL}/api/services/todo/update_item",
+                json={"entity_id": entity_id, "item": uid, "status": "completed"},
+                headers=_ha_headers(),
+            )
+            return {"ok": r.status_code in (200, 204)}
+        except Exception:
+            raise HTTPException(status_code=500, detail="HA call failed")
+
+
+@app.get("/api/leave-soon-config")
+async def leave_soon_config():
+    return {"minutes": LEAVE_SOON_MINUTES}
 
 
 if __name__ == "__main__":
