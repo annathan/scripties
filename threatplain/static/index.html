@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ThreatPlain — Plain English threat intelligence</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #2563eb;
+      --red:     #dc2626;
+      --amber:   #d97706;
+      --green:   #16a34a;
+      --bg:      #f1f5f9;
+      --card:    #ffffff;
+      --text:    #0f172a;
+      --muted:   #64748b;
+      --border:  #e2e8f0;
+      --radius:  12px;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 0 1rem 3rem;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      padding: 2.5rem 1rem 1.5rem;
+    }
+    .wordmark {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .wordmark span { color: var(--blue); }
+    .tagline {
+      margin-top: 0.4rem;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    /* ── Layout ── */
+    .container { max-width: 680px; margin: 0 auto; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.06);
+      padding: 1.75rem;
+    }
+
+    /* ── Input form ── */
+    #input-form label {
+      display: block;
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    textarea#input-value {
+      width: 100%;
+      min-height: 80px;
+      max-height: 280px;
+      padding: 0.75rem 1rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+    }
+    textarea#input-value:focus { border-color: var(--blue); }
+
+    .hint {
+      margin-top: 0.6rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.4rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-ghost {
+      background: var(--bg);
+      color: var(--text);
+      border: 1.5px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--border); }
+    .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.85rem; }
+
+    #submit-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    /* ── Loading ── */
+    #loading {
+      display: none;
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 1.2rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading p { color: var(--muted); font-size: 0.95rem; }
+    #loading .step-label {
+      display: inline-block;
+      margin-top: 0.5rem;
+      font-weight: 600;
+      color: var(--blue);
+    }
+
+    /* ── Error ── */
+    #error-state {
+      display: none;
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    .error-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    #error-message {
+      color: var(--red);
+      font-weight: 500;
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+    }
+
+    /* ── Result card ── */
+    #result-card { display: none; }
+
+    .result-meta {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+    .result-indicator {
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 0.85rem;
+      background: var(--bg);
+      padding: 0.35rem 0.7rem;
+      border-radius: 6px;
+      word-break: break-all;
+      max-width: 480px;
+      color: var(--text);
+    }
+    .input-type-tag {
+      display: inline-block;
+      margin-top: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+
+    /* ── Threat badge ── */
+    .threat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 1rem;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.85rem;
+    }
+    .threat-SAFE     { background: #dcfce7; color: #15803d; }
+    .threat-LOW      { background: #fef9c3; color: #854d0e; }
+    .threat-MEDIUM   { background: #ffedd5; color: #c2410c; }
+    .threat-HIGH     { background: #fee2e2; color: #991b1b; }
+    .threat-CRITICAL { background: #450a0a; color: #fecaca; }
+    .threat-UNKNOWN  { background: #f1f5f9; color: #475569; }
+
+    /* ── Sources bar ── */
+    .sources-bar {
+      display: none;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 1.25rem;
+    }
+    .source-chip {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+    }
+    .source-chip.clean   { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+    .source-chip.warn    { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
+    .source-chip.danger  { border-color: #fca5a5; background: #fff5f5; color: #991b1b; }
+
+    /* ── Screenshot ── */
+    .screenshot-block {
+      display: none;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 1.25rem;
+    }
+    .screenshot-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      padding: 0.5rem 0.85rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .screenshot-block img {
+      width: 100%;
+      display: block;
+      max-height: 280px;
+      object-fit: cover;
+      object-position: top;
+      cursor: zoom-in;
+    }
+
+    /* ── Sections ── */
+    .sections { display: flex; flex-direction: column; gap: 1rem; }
+
+    .section {
+      border-radius: 10px;
+      padding: 1.1rem 1.25rem;
+      border-left: 4px solid transparent;
+    }
+    .section-blue  { border-left-color: var(--blue);  background: #eff6ff; }
+    .section-red   { border-left-color: var(--red);   background: #fff5f5; }
+    .section-amber { border-left-color: var(--amber); background: #fffbeb; }
+    .section-green { border-left-color: var(--green); background: #f0fdf4; }
+
+    .section h3 {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.6rem;
+    }
+    .section-blue  h3 { color: var(--blue); }
+    .section-red   h3 { color: var(--red); }
+    .section-amber h3 { color: var(--amber); }
+    .section-green h3 { color: var(--green); }
+
+    .section-body {
+      font-size: 0.95rem;
+      line-height: 1.65;
+      color: var(--text);
+    }
+    .section-body p + p { margin-top: 0.4rem; }
+    .section-body ul { padding-left: 1.25rem; margin-top: 0.25rem; }
+    .section-body li { margin-bottom: 0.3rem; }
+
+    /* ── Bottom actions ── */
+    .result-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .copy-confirm {
+      font-size: 0.8rem;
+      color: var(--green);
+      font-weight: 600;
+      display: none;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 500px) {
+      .wordmark { font-size: 1.6rem; }
+      .card { padding: 1.25rem; }
+      .result-meta { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">Threat<span>Plain</span></div>
+  <p class="tagline">Plain English threat intelligence. No jargon.</p>
+</header>
+
+<div class="container">
+
+  <!-- Input form -->
+  <div id="input-form">
+    <div class="card">
+      <label for="input-value">Paste a URL, IP address, file hash, or email headers</label>
+      <textarea id="input-value"
+        placeholder="e.g.  192.0.2.1  •  https://suspicious-site.example  •  a1b2c3d4e5f6...  •  (paste raw email headers)"></textarea>
+      <p class="hint">Accepts: IPv4/IPv6 addresses · HTTP/HTTPS URLs · MD5, SHA-1, SHA-256 hashes · raw email headers</p>
+      <div id="submit-row">
+        <button class="btn btn-primary" id="analyze-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Analyze
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Querying threat intelligence sources&hellip;</p>
+    <p><span class="step-label" id="step-label">This may take up to 30 seconds.</span></p>
+  </div>
+
+  <!-- Error -->
+  <div id="error-state">
+    <div class="card">
+      <div class="error-icon">⚠️</div>
+      <p id="error-message"></p>
+      <button class="btn btn-ghost" id="try-again-btn">Try Again</button>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div id="result-card">
+    <div class="card">
+      <div class="result-meta">
+        <div>
+          <div class="result-indicator" id="result-indicator"></div>
+          <div class="input-type-tag" id="result-type-tag"></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="copy-link-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy link
+        </button>
+      </div>
+      <span class="copy-confirm" id="copy-confirm">✓ Link copied!</span>
+
+      <div class="threat-badge" id="threat-badge"></div>
+
+      <!-- Source evidence chips -->
+      <div class="sources-bar" id="sources-bar"></div>
+
+      <!-- URLScan screenshot (URL results only) -->
+      <div class="screenshot-block" id="screenshot-block">
+        <div class="screenshot-label">What the page looks like</div>
+        <img id="screenshot-img" alt="Page screenshot" loading="lazy" />
+      </div>
+
+      <div class="sections">
+        <div class="section section-blue">
+          <h3>What is this?</h3>
+          <div class="section-body" id="what-is-this"></div>
+        </div>
+        <div class="section section-red">
+          <h3>What does it do to your machine?</h3>
+          <div class="section-body" id="what-it-does"></div>
+        </div>
+        <div class="section section-amber">
+          <h3>What does it touch on your system?</h3>
+          <div class="section-body" id="what-it-touches"></div>
+        </div>
+        <div class="section section-green">
+          <h3>What should you do right now?</h3>
+          <div class="section-body" id="what-to-do"></div>
+        </div>
+      </div>
+
+      <div class="result-actions">
+        <button class="btn btn-primary" id="analyze-another-btn">Analyze Another</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  const THREAT_LABELS = {
+    SAFE:     { label: '✓ Safe',        cls: 'threat-SAFE' },
+    LOW:      { label: '↓ Low Risk',    cls: 'threat-LOW' },
+    MEDIUM:   { label: '! Medium Risk', cls: 'threat-MEDIUM' },
+    HIGH:     { label: '!! High Risk',  cls: 'threat-HIGH' },
+    CRITICAL: { label: '⚠ Critical',    cls: 'threat-CRITICAL' },
+    UNKNOWN:  { label: '? Unknown',     cls: 'threat-UNKNOWN' },
+  };
+
+  const TYPE_LABELS = {
+    url: 'URL',
+    ip: 'IP Address',
+    hash: 'File Hash',
+    email_header: 'Email Headers',
+    unknown: 'Unknown',
+  };
+
+  function show(id)  { $(id).style.display = 'block'; }
+  function hide(id)  { $(id).style.display = 'none';  }
+
+  // ── Safe DOM-based body renderer (no innerHTML with user content) ──
+
+  function renderBody(elId, text) {
+    const el = $(elId);
+    el.textContent = '';
+    if (!text) {
+      el.textContent = 'Insufficient data to determine this.';
+      return;
+    }
+
+    const lines = text.split('\n');
+    const hasBullets = lines.some(l => /^[-•*]\s/.test(l.trim()));
+
+    if (hasBullets) {
+      let ul = null;
+      for (const line of lines) {
+        const m = line.trim().match(/^[-•*]\s+([\s\S]*)/);
+        if (m) {
+          if (!ul) { ul = document.createElement('ul'); el.appendChild(ul); }
+          const li = document.createElement('li');
+          li.textContent = m[1];
+          ul.appendChild(li);
+        } else {
+          ul = null;
+          if (line.trim()) {
+            const p = document.createElement('p');
+            p.textContent = line;
+            el.appendChild(p);
+          }
+        }
+      }
+    } else {
+      const lines2 = text.split('\n');
+      for (const line of lines2) {
+        if (line.trim()) {
+          const p = document.createElement('p');
+          p.textContent = line;
+          el.appendChild(p);
+        }
+      }
+    }
+  }
+
+  // ── Source evidence chips ──
+
+  function chip(label, cssClass) {
+    const el = document.createElement('span');
+    el.className = 'source-chip ' + (cssClass || '');
+    el.textContent = label;
+    return el;
+  }
+
+  function renderSources(sources) {
+    const bar = $('sources-bar');
+    bar.textContent = '';
+    if (!sources || !Object.keys(sources).length) return;
+
+    // VirusTotal detection count
+    const vt = sources.virustotal;
+    if (vt && !vt.error && vt.total > 0) {
+      const pct = vt.malicious / vt.total;
+      const cls = vt.malicious > 0 ? 'danger' : 'clean';
+      bar.appendChild(chip(`VirusTotal: ${vt.malicious}/${vt.total} flagged`, cls));
+    } else if (vt && vt.error) {
+      bar.appendChild(chip('VirusTotal: unavailable'));
+    }
+
+    // AbuseIPDB confidence
+    const abuse = sources.abuseipdb;
+    if (abuse && !abuse.error && abuse.abuse_confidence != null) {
+      const c = abuse.abuse_confidence;
+      const cls = c >= 50 ? 'danger' : c > 15 ? 'warn' : 'clean';
+      bar.appendChild(chip(`AbuseIPDB: ${c}% abuse score`, cls));
+    }
+
+    // URLScan verdict
+    const us = sources.urlscan;
+    if (us && !us.error && us.verdict) {
+      const cls = (us.malicious || us.phishing) ? 'danger' : 'clean';
+      bar.appendChild(chip(`URLScan: ${us.verdict}`, cls));
+    }
+
+    // Email auth (SPF / DKIM / DMARC)
+    const auth = sources.email_auth;
+    if (auth && Object.keys(auth).length) {
+      for (const [proto, result] of Object.entries(auth)) {
+        const cls = result === 'pass' ? 'clean' : result === 'fail' ? 'danger' : 'warn';
+        bar.appendChild(chip(`${proto.toUpperCase()}: ${result}`, cls));
+      }
+    }
+
+    // Worst-flagged IP from email header analysis
+    const ipAnalysis = sources.ip_analysis;
+    if (ipAnalysis) {
+      let worstIp = null, worstCount = 0;
+      for (const [ip, data] of Object.entries(ipAnalysis)) {
+        const m = (data.virustotal || {}).malicious || 0;
+        const a = (data.abuseipdb || {}).abuse_confidence || 0;
+        if (m > worstCount || a > 50) { worstIp = ip; worstCount = m; }
+      }
+      if (worstIp) {
+        const d = ipAnalysis[worstIp];
+        const m = (d.virustotal || {}).malicious || 0;
+        const a = (d.abuseipdb || {}).abuse_confidence || 0;
+        if (m > 0 || a > 15) {
+          const cls = (m > 5 || a > 50) ? 'danger' : 'warn';
+          bar.appendChild(chip(`${worstIp}: ${m > 0 ? m + ' VT flags' : a + '% abuse'}`, cls));
+        }
+      }
+    }
+
+    bar.style.display = bar.children.length ? 'flex' : 'none';
+  }
+
+  // ── Screenshot ──
+
+  function renderScreenshot(url) {
+    const block = $('screenshot-block');
+    if (!url) { block.style.display = 'none'; return; }
+    $('screenshot-img').src = url;
+    $('screenshot-img').onclick = () => window.open(url, '_blank');
+    block.style.display = 'block';
+  }
+
+  // ── Main result renderer ──
+
+  function showResult(data) {
+    hide('input-form');
+    hide('loading');
+    hide('error-state');
+
+    const syn = data.synthesis;
+
+    $('result-indicator').textContent = data.input.length > 80
+      ? data.input.slice(0, 77) + '…'
+      : data.input;
+    $('result-type-tag').textContent = TYPE_LABELS[data.input_type] || data.input_type;
+
+    const level = (syn.threat_level || 'UNKNOWN').toUpperCase();
+    const badge = THREAT_LABELS[level] || THREAT_LABELS.UNKNOWN;
+    const badgeEl = $('threat-badge');
+    badgeEl.textContent = badge.label;
+    badgeEl.className = 'threat-badge ' + badge.cls;
+
+    renderSources(data.sources || {});
+    renderScreenshot(data.screenshot_url || null);
+
+    renderBody('what-is-this',    syn.what_is_this);
+    renderBody('what-it-does',    syn.what_it_does);
+    renderBody('what-it-touches', syn.what_it_touches);
+    renderBody('what-to-do',      syn.what_to_do);
+
+    show('result-card');
+  }
+
+  function showError(msg) {
+    hide('input-form');
+    hide('loading');
+    $('error-message').textContent = msg;
+    show('error-state');
+  }
+
+  // ── Analysis flow ──
+
+  async function runAnalysis() {
+    const value = $('input-value').value.trim();
+    if (!value) return;
+
+    hide('input-form');
+    hide('error-state');
+    hide('result-card');
+    show('loading');
+
+    const steps = [
+      'Querying VirusTotal…',
+      'Checking AbuseIPDB…',
+      'Scanning with URLScan.io…',
+      'Synthesizing results with AI…',
+    ];
+    let si = 0;
+    const stepEl = $('step-label');
+    const stepTimer = setInterval(() => {
+      si = (si + 1) % steps.length;
+      stepEl.textContent = steps[si];
+    }, 7000);
+    stepEl.textContent = steps[0];
+
+    try {
+      const resp = await fetch('/api/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+
+      clearInterval(stepTimer);
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        showError(err.detail || `Server error (${resp.status}). Please try again.`);
+        return;
+      }
+
+      const data = await resp.json();
+      history.pushState({ id: data.id }, '', `/result/${data.id}`);
+      showResult(data);
+
+    } catch (e) {
+      clearInterval(stepTimer);
+      showError('Network error. Is the server running?');
+    }
+  }
+
+  async function loadResult(resultId) {
+    show('loading');
+    hide('input-form');
+    try {
+      const resp = await fetch(`/api/result/${resultId}`);
+      hide('loading');
+      if (!resp.ok) {
+        showError('Result not found. It may have been deleted.');
+        show('input-form');
+        return;
+      }
+      const data = await resp.json();
+      showResult(data);
+    } catch (e) {
+      hide('loading');
+      showError('Could not load result.');
+      show('input-form');
+    }
+  }
+
+  // ── Event listeners ──
+
+  $('analyze-btn').addEventListener('click', runAnalysis);
+  $('input-value').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runAnalysis(); }
+  });
+  $('try-again-btn').addEventListener('click', () => {
+    hide('error-state');
+    show('input-form');
+  });
+  $('analyze-another-btn').addEventListener('click', () => {
+    hide('result-card');
+    $('input-value').value = '';
+    show('input-form');
+    history.pushState({}, '', '/');
+  });
+  $('copy-link-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      const el = $('copy-confirm');
+      el.style.display = 'inline-flex';
+      setTimeout(() => { el.style.display = 'none'; }, 2500);
+    });
+  });
+
+  // ── Routing ──
+
+  const match = window.location.pathname.match(/^\/result\/([A-Za-z0-9_-]+)$/);
+  if (match) {
+    loadResult(match[1]);
+  } else {
+    show('input-form');
+  }
+</script>
+
+</body>
+</html>
