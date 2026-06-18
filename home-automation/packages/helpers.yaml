@@ -91,3 +91,18 @@ timer:
   front_door_relock:
     name: Front door relock timer
     icon: mdi:lock-clock
+
+template:
+  - sensor:
+      # Calculated grid power — used because no CT clamp/meter is wired to the inverter.
+      # Positive = importing from grid, negative = exporting to grid (matches the
+      # sign convention of sensor.goodwe_grid_power if a meter is ever added later).
+      - name: "Solar Grid Power"
+        unique_id: solar_grid_power_calculated
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        icon: mdi:transmission-tower
+        state: >
+          {{ ((states('sensor.goodwe_house_consumption') | float(0) -
+               states('sensor.goodwe_pv_power') | float(0)) * 1000) | round(0) }}
