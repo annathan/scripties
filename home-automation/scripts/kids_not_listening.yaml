@@ -53,7 +53,21 @@ kids_not_listening:
           - media_player.may_clock        # rename after Cast setup
           - media_player.sia_clock        # rename after Cast setup
           - media_player.allira_clock     # rename after Cast setup
-        message: "Why don't you listen when your parents are talking?"
+        message: >
+          {% set lines = [
+            "Why don't you listen when your parents are talking? Studies confirm parents have been right 100% of the time. This has been peer reviewed.",
+            "Breaking news: Mum and Dad were right again. Screens are now off. That is all.",
+            "Fun fact: in the entire history of humanity, parents have never once been wrong. Congratulations on discovering this the hard way.",
+            "Attention. The people who pay the bills have made a decision. Thank you for your cooperation.",
+            "Did you know? Every time a kid doesn't listen, a parent gets proven right. You've just proven them right again. Well done.",
+            "This is your smart clock speaking. Your parents are correct. They are always correct. Please update your assumptions accordingly.",
+            "Mum and Dad: still right since forever. Screens: currently off. Have a lovely evening.",
+            "Research shows ignoring your parents leads to exactly this. Scientists are unsurprised.",
+            "Your parents have never steered you wrong, and tonight is not going to be the exception. Goodnight, screens.",
+            "The management has spoken. Please note that the management has a perfect track record. Screens off.",
+            "Parental advisory: your parents were right. This message will now repeat in your head for the next 20 years."
+          ] %}
+          {{ lines | random }}
         language: en
 
     # ── Step 2: Dim bedroom lights to low red ───────────────────────────────
