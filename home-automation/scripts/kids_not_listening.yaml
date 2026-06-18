@@ -1,0 +1,103 @@
+# "Kids Not Listening" script
+#
+# Triggered from a dashboard button, the HA Companion app, or HA Assist
+# ("Hey HA, run kids not listening").
+#
+# What it does:
+#   1. Plays announcement on all three bedroom smart clocks (Google Cast / TTS)
+#   2. Dims bedroom lights to low red
+#   3. Shuts down all consoles and the PC
+#
+# ── Before this works ──────────────────────────────────────────────────────────
+#
+# Cast integration (free, built-in):
+#   Settings → Integrations → Add → Cast
+#   Discovers the Lenovo Smart Clocks on your network automatically.
+#   Rename the resulting media_player entities to match the IDs below.
+#
+# Console integrations:
+#   PlayStation (PS4 or PS5):
+#     Settings → Integrations → Add → PlayStation 4
+#     Needs "Enable Remote Play" turned on in PS Settings → Remote Play Connection Settings.
+#     Entity: media_player.playstation (rename after setup)
+#
+#   Xbox:
+#     Settings → Integrations → Add → Xbox
+#     Sign in with the Microsoft account linked to the Xbox.
+#     Entity: media_player.xbox (rename after setup)
+#
+#   Nintendo Switch:
+#     No network control exists — fit a Zigbee or WiFi smart plug and cut power.
+#     WARN the kids first (this script announces before cutting, but mid-game saves
+#     on Switch may be lost if the game doesn't autosave).
+#     Entity: switch.nintendo_switch_plug (rename after setup)
+#
+#   Windows PC:
+#     Install HA Companion (https://companion.home-assistant.io) on the PC.
+#     It registers a shutdown button automatically: button.PCNAME_shutdown
+#     Rename or note the entity ID after install and update below.
+#     Entity: button.kids_pc_shutdown (rename after setup)
+
+kids_not_listening:
+  alias: "Kids Not Listening"
+  icon: mdi:account-child-outline
+  mode: single
+
+  sequence:
+    # ── Step 1: Announcement on all smart clocks ────────────────────────────
+    # Fires immediately — kids hear it before anything cuts out.
+    - service: tts.google_translate_say
+      data:
+        entity_id:
+          - media_player.issy_clock       # rename after Cast setup
+          - media_player.may_clock        # rename after Cast setup
+          - media_player.sia_clock        # rename after Cast setup
+          - media_player.allira_clock     # rename after Cast setup
+        message: "Why don't you listen when your parents are talking?"
+        language: en
+
+    # ── Step 2: Dim bedroom lights to low red ───────────────────────────────
+    - service: light.turn_on
+      target:
+        entity_id:
+          - light.bed_2_dimmer
+          - light.bed_3_dimmer
+          - light.bed_4_dimmer
+      data:
+        brightness_pct: 15
+        color_temp_kelvin: 2200
+
+    - service: light.turn_on
+      target:
+        entity_id:
+          - light.bed_2_lamp
+          - light.bed_3_lamp
+          - light.bed_4_lamp
+      data:
+        brightness_pct: 15
+        rgb_color: [255, 20, 0]
+
+    # ── Step 3: Short pause so announcement plays before screens die ────────
+    - delay: "00:00:05"
+
+    # ── Step 4: Shut down consoles and PC ───────────────────────────────────
+
+    # PlayStation (PS4 / PS5) — graceful shutdown via network
+    - service: media_player.turn_off
+      target:
+        entity_id: media_player.playstation   # rename after PS integration setup
+
+    # Xbox — graceful shutdown via network
+    - service: media_player.turn_off
+      target:
+        entity_id: media_player.xbox          # rename after Xbox integration setup
+
+    # Nintendo Switch — cuts power via smart plug (no graceful shutdown available)
+    - service: switch.turn_off
+      target:
+        entity_id: switch.nintendo_switch_plug  # rename after smart plug setup
+
+    # Windows PC — graceful shutdown via HA Companion app installed on the PC
+    - service: button.press
+      target:
+        entity_id: button.kids_pc_shutdown    # rename after Companion install on PC

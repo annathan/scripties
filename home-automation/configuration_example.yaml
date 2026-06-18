@@ -14,6 +14,9 @@ person: !include persons.yaml
 # Automations (merged from all files in automations/)
 automation: !include_dir_merge_list automations/
 
+# Scripts (merged from all files in scripts/)
+script: !include_dir_merge_named scripts/
+
 # MQTT — Mosquitto add-on auto-configures this; explicit entry only needed
 # if you're running an external broker.
 mqtt:
