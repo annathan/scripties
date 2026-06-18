@@ -32,10 +32,10 @@
     - condition: or
       conditions:
         - condition: state
-          entity_id: person.alice
+          entity_id: person.andrew
           state: "home"
         - condition: state
-          entity_id: person.bob
+          entity_id: person.jessica
           state: "home"
   action:
     - service: light.turn_on
@@ -215,17 +215,17 @@
   id: lighting_all_off_when_away
   trigger:
     - platform: state
-      entity_id: person.alice
+      entity_id: person.andrew
       to: "not_home"
     - platform: state
-      entity_id: person.bob
+      entity_id: person.jessica
       to: "not_home"
   condition:
     - condition: state
-      entity_id: person.alice
+      entity_id: person.andrew
       state: "not_home"
     - condition: state
-      entity_id: person.bob
+      entity_id: person.jessica
       state: "not_home"
     - condition: state
       entity_id: person.uni_student

@@ -24,17 +24,17 @@ input_boolean:
   # Toggle ON from dashboard if a school kid is staying home.
   # Prevents their bedroom + bathroom lights being auto-off at 08:45.
   kid_1_home_sick:
-    name: "Kid 1 home sick (Bed 2)"
+    name: "Issy home sick"
     initial: false
     icon: mdi:emoticon-sick-outline
 
   kid_2_home_sick:
-    name: "Kid 2 home sick (Bed 3)"
+    name: "May home sick"
     initial: false
     icon: mdi:emoticon-sick-outline
 
   kid_3_home_sick:
-    name: "Kid 3 home sick (Bed 4)"
+    name: "Sia home sick"
     initial: false
     icon: mdi:emoticon-sick-outline
 

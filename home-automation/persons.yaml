@@ -9,38 +9,37 @@
 #   Settings → Companion App → Location → Background refresh: Always
 #   Settings → Companion App → Location → Significant location change: ON
 
-- name: Alice
-  id: alice
+- name: Andrew
+  id: andrew
   device_trackers:
-    - device_tracker.alice_phone   # created by HA Companion app on Alice's phone
+    - device_tracker.andrew_phone   # created by HA Companion app on Andrew's phone
 
-- name: Bob
-  id: bob
+- name: Jessica
+  id: jessica
   device_trackers:
-    - device_tracker.bob_phone     # created by HA Companion app on Bob's phone
+    - device_tracker.jessica_phone  # created by HA Companion app on Jessica's phone
 
 # ── Kids ──────────────────────────────────────────────────────────────────────
 # Uni student — ground floor Bed 5, her own zone
 # Her phone presence drives lighting in her area (not school calendar)
-- name: Uni Student
+- name: Allira
   id: uni_student
   device_trackers:
     - device_tracker.uni_student_phone
 
 # School kids — first floor Beds 2, 3, 4
 # School calendar + time drives their lighting automations
-# Rename to real names after setup (id must stay as kid_1/2/3 to match automations)
-- name: Kid 1
+- name: Issy
   id: kid_1
   device_trackers:
-    - device_tracker.kid_1_phone   # add if they have a phone; leave empty otherwise
+    - device_tracker.kid_1_phone   # add if she has a phone; leave empty otherwise
 
-- name: Kid 2
+- name: May
   id: kid_2
   device_trackers:
     - device_tracker.kid_2_phone
 
-- name: Kid 3
+- name: Sia
   id: kid_3
   device_trackers:
     - device_tracker.kid_3_phone

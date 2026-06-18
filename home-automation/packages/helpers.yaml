@@ -14,13 +14,13 @@ input_boolean:
   # Per-person away flags — set ON when person leaves, OFF when they arrive.
   # Used to prevent the garage/door triggering if a person never actually left
   # (e.g. HA restarts while they're home and zone re-evaluates on startup).
-  alice_was_away:
-    name: Alice was away
+  andrew_was_away:
+    name: Andrew was away
     initial: false
     icon: mdi:account-arrow-left
 
-  bob_was_away:
-    name: Bob was away
+  jessica_was_away:
+    name: Jessica was away
     initial: false
     icon: mdi:account-arrow-left
 

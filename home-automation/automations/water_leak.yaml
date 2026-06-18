@@ -95,10 +95,10 @@
       to: "on"
   condition:
     - condition: state
-      entity_id: person.alice
+      entity_id: person.andrew
       state: "not_home"
     - condition: state
-      entity_id: person.bob
+      entity_id: person.jessica
       state: "not_home"
   action:
     - service: switch.turn_off           # closes the valve (check your actuator's logic)

@@ -3,7 +3,7 @@
 #   alarm_control_panel.home_alarm        — manual alarm from packages/alarm.yaml
 #   group.security_perimeter              — external door/window sensors
 #   group.security_interior               — interior motion sensors
-#   person.alice / person.bob             — presence detection
+#   person.andrew / person.jessica             — presence detection
 #   media_player.* or siren.*            — for audible alert (optional)
 #   camera.front_door                     — Ring doorbell snapshot on trigger
 
@@ -13,17 +13,17 @@
   id: alarm_arm_away_on_departure
   trigger:
     - platform: state
-      entity_id: person.alice
+      entity_id: person.andrew
       to: "not_home"
     - platform: state
-      entity_id: person.bob
+      entity_id: person.jessica
       to: "not_home"
   condition:
     - condition: state
-      entity_id: person.alice
+      entity_id: person.andrew
       state: "not_home"
     - condition: state
-      entity_id: person.bob
+      entity_id: person.jessica
       state: "not_home"
     - condition: not
       conditions:
@@ -45,11 +45,11 @@
   id: alarm_disarm_on_arrival
   trigger:
     - platform: zone
-      entity_id: person.alice
+      entity_id: person.andrew
       zone: zone.home
       event: enter
     - platform: zone
-      entity_id: person.bob
+      entity_id: person.jessica
       zone: zone.home
       event: enter
   condition:
@@ -149,10 +149,10 @@
     - condition: or
       conditions:
         - condition: state
-          entity_id: person.alice
+          entity_id: person.andrew
           state: "home"
         - condition: state
-          entity_id: person.bob
+          entity_id: person.jessica
           state: "home"
   action:
     - service: alarm_control_panel.alarm_arm_night
