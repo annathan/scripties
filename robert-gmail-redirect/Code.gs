@@ -52,6 +52,8 @@ const CONFIG = {
     'neighborsapp.com',
     'neighborhoodalerts.com',  // Lexington Alerts / Home Media LLC — confirmed Robert sender
     'pawboost.com',            // Lost & found pet alerts (seen via neighborhoodalerts.com)
+    // Travel / loyalty
+    'email-marriott.com',      // Marriott Bonvoy — account confirmed as Robert Fogle, West Columbia SC
   ],
 
   // ── Body/subject keywords used as a secondary confidence signal. ────────────
@@ -378,10 +380,11 @@ function scanBodyForEmail_(body, senderDomain) {
 
     scores[addr] = (scores[addr] || 0) + 1;
 
-    // Bonus for addresses that look like they belong to a Robert.
+    // Bonus for addresses that look like they belong to Robert Fogle (West Columbia SC).
     const local = addr.split('@')[0];
     if (/robert/i.test(local)) scores[addr] += 10;
-    if (/dunn/i.test(local))   scores[addr] += 5;
+    if (/fogle/i.test(local))  scores[addr] += 10;
+    if (/dunn/i.test(local))   scores[addr] += 5;  // keep in case of false surname match
     // Slight bonus for non-Gmail personal domains (could be work email).
     if (!/@(?:gmail|yahoo|hotmail|outlook|aol|icloud)\./.test(addr)) scores[addr] += 3;
   }
