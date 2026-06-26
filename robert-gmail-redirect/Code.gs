@@ -50,6 +50,8 @@ const CONFIG = {
     'signupgenius.com',
     'patch.com',
     'neighborsapp.com',
+    'neighborhoodalerts.com',  // Lexington Alerts / Home Media LLC — confirmed Robert sender
+    'pawboost.com',            // Lost & found pet alerts (seen via neighborhoodalerts.com)
   ],
 
   // ── Body/subject keywords used as a secondary confidence signal. ────────────
