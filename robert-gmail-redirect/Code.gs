@@ -227,6 +227,17 @@ function sendWeeklyDigest() {
     body += '\n';
   }
 
+  const msftUsernames = JSON.parse(props.getProperty('robertMsftUsernames') || '{}');
+  const sortedMsft = Object.entries(msftUsernames).sort((a, b) => b[1] - a[1]);
+  if (sortedMsft.length > 0) {
+    body += `Microsoft 365 routing usernames spotted in To/CC headers\n`;
+    body += `(seen alongside andydunn5@gmail.com — may be Robert's M365 username):\n`;
+    sortedMsft.forEach(([username, count]) => {
+      body += `  ${username} (seen ${count}x)\n`;
+    });
+    body += '\n';
+  }
+
   body += `────────────────────────────────────\n`;
   body += `Add more sender domains to SENDER_DOMAINS in Code.gs\n`;
   body += `as you spot new services Robert has signed up for.\n`;
@@ -274,6 +285,30 @@ function extractRobertEmail_(thread) {
   const plainBody = message.getPlainBody() || '';
   const sender    = message.getFrom();
   const senderDomain = extractDomain_(sender);
+
+  // ── 0. To/CC header scan ─────────────────────────────────────────────────
+  // Catches cases where Robert's other address appears alongside ours in
+  // the same email (spam, CC'd newsletters, etc).
+  const toHeader  = message.getTo()  || '';
+  const ccHeader  = message.getCc()  || '';
+  const headerAddrs = (toHeader + ',' + ccHeader)
+    .match(/[\w.+\-]+@[\w.\-]+\.[a-zA-Z]{2,}/g) || [];
+  for (const addr of headerAddrs) {
+    const lower = addr.toLowerCase();
+    if (lower === 'andydunn5@gmail.com') continue;
+    // Microsoft Exchange Online routing addresses (e.g. RobertGb@TENANT.namprd04.prod.outlook.com)
+    // These aren't usable email addresses but the local part is a real username clue.
+    if (/\.(?:namprd|eurprd|apcprd)\d+\.prod\.outlook\.com$/.test(lower)) {
+      const username = lower.split('@')[0];
+      Logger.log(`[To/CC] Microsoft routing username: ${username}`);
+      storeCandidate_('robertMsftUsernames', username);
+      continue;
+    }
+    if (isSystemAddress_(lower)) continue;
+    if (isSenderDomain_(lower, senderDomain)) continue;
+    Logger.log(`[To/CC] external candidate: ${lower}`);
+    storeCandidate_('robertCandidates', lower);
+  }
 
   // ── 1. List-Unsubscribe header ──────────────────────────────────────────
   const headers   = message.getHeader('List-Unsubscribe') || '';
