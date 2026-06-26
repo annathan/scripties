@@ -54,6 +54,8 @@ const CONFIG = {
     'pawboost.com',            // Lost & found pet alerts (seen via neighborhoodalerts.com)
     // Travel / loyalty
     'email-marriott.com',      // Marriott Bonvoy — account confirmed as Robert Fogle, West Columbia SC
+    // Financial
+    'wellsfargo.com',          // Wells Fargo — Robert Fogle attempted to open deposit account Jun 2025
   ],
 
   // ── Body/subject keywords used as a secondary confidence signal. ────────────
