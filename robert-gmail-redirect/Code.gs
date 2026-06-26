@@ -161,7 +161,7 @@ function processRobertEmails() {
   });
 
   // Update running total for the digest.
-  const props = ScriptApp.getScriptProperties();
+  const props = PropertiesService.getScriptProperties();
   const prev  = parseInt(props.getProperty('totalProcessed') || '0', 10);
   props.setProperty('totalProcessed', String(prev + processed));
 
@@ -178,7 +178,7 @@ function sendWeeklyDigest() {
 
   if (dayOfWk !== CONFIG.DIGEST_DAY) return;
 
-  const props          = ScriptApp.getScriptProperties();
+  const props          = PropertiesService.getScriptProperties();
   const totalProcessed = props.getProperty('totalProcessed') || '0';
   const candidates     = JSON.parse(props.getProperty('robertCandidates') || '{}');
   const phones         = JSON.parse(props.getProperty('robertPhones')     || '{}');
@@ -382,7 +382,7 @@ function isSystemAddress_(email) {
 // ─── PRIVATE: STATE & FORWARDING ─────────────────────────────────────────────
 
 function storeCandidate_(propertyKey, value) {
-  const props = ScriptApp.getScriptProperties();
+  const props = PropertiesService.getScriptProperties();
   const map   = JSON.parse(props.getProperty(propertyKey) || '{}');
   map[value]  = (map[value] || 0) + 1;
   props.setProperty(propertyKey, JSON.stringify(map));
