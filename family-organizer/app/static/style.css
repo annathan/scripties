@@ -757,3 +757,38 @@ body[data-wx="clear-night"]    { --bg: #1C2240; --surface: #242A4A; --border: #2
   text-decoration: line-through;
   color: var(--text-3);
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Quick Launch (Spotify / YouTube)
+   ══════════════════════════════════════════════════════════════════ */
+
+.quick-launch {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ql-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: var(--shadow), 0 4px 14px rgba(0,0,0,.18);
+  opacity: 0.92;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.ql-btn:active { transform: scale(0.92); opacity: 1; }
+
+.ql-spotify { background: #1DB954; }
+.ql-youtube { background: #FF0000; }
