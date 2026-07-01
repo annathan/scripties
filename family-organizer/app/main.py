@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import time
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -84,9 +85,14 @@ def _ha_headers() -> dict:
     }
 
 
+APP_BOOT_TS = str(int(time.time()))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "boot_ts": APP_BOOT_TS}
+    )
 
 
 @app.get("/api/events")
