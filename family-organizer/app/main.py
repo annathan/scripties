@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 from datetime import datetime, timedelta, date
@@ -8,6 +9,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("family_organizer")
 
 app = FastAPI(title="Family Organizer")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -25,6 +29,11 @@ CALENDARS = [c.strip() for c in _cals_env.split(",") if c.strip()] if _cals_env 
 
 _chore_env = os.getenv("CHORE_LISTS", "")
 CHORE_LISTS = [c.strip() for c in _chore_env.split(",") if c.strip()] if _chore_env else []
+
+logger.info(
+    "Startup config: HA_URL=%s HA_TOKEN_set=%s WEATHER_ENTITY=%s CALENDARS=%s",
+    HA_URL, bool(HA_TOKEN), WEATHER_ENTITY, CALENDARS or "(auto-discover)",
+)
 
 AFFIRMATIONS = [
     "You are doing an amazing job today!",
@@ -96,8 +105,10 @@ async def get_events():
                 r = await client.get(f"{HA_URL}/api/calendars", headers=_ha_headers())
                 if r.status_code == 200:
                     cal_ids = [c["entity_id"] for c in r.json()]
+                else:
+                    logger.warning("GET /api/calendars failed: %s %s", r.status_code, r.text)
             except Exception:
-                pass
+                logger.exception("GET /api/calendars raised an exception")
 
         for cal_id in cal_ids:
             if not cal_id:
@@ -112,8 +123,10 @@ async def get_events():
                     for ev in r.json():
                         ev["calendar"] = cal_id
                         all_events.append(ev)
+                else:
+                    logger.warning("GET /api/calendars/%s failed: %s %s", cal_id, r.status_code, r.text)
             except Exception:
-                pass
+                logger.exception("GET /api/calendars/%s raised an exception", cal_id)
 
     return JSONResponse({"events": all_events})
 
@@ -128,8 +141,9 @@ async def get_weather():
             )
             if r.status_code == 200:
                 return JSONResponse(r.json())
+            logger.warning("GET /api/states/%s failed: %s %s", WEATHER_ENTITY, r.status_code, r.text)
         except Exception:
-            pass
+            logger.exception("GET /api/states/%s raised an exception", WEATHER_ENTITY)
     return JSONResponse({})
 
 
