@@ -1,6 +1,6 @@
 name: "Family Organizer"
 description: "Skylight-inspired family dashboard for Echo Show 15 with Apple Calendar integration"
-version: "1.1.5"
+version: "1.1.6"
 slug: "family_organizer"
 init: false
 homeassistant_api: true
