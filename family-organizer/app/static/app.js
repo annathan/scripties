@@ -33,6 +33,8 @@ const MONTHS = [
 
 // ── Shared event cache (populated by loadEvents, read by LeaveSoon) ─
 let _events = [];
+let _config = {};
+let _selectedDateStr = null;
 let _leaveSoonMinutes = 25;
 
 // ══════════════════════════════════════════════════════════════════
@@ -76,6 +78,19 @@ function calLabel(calId) {
   return calId.replace(/^calendar\./, '').replace(/_/g, ' ');
 }
 
+function dayLabel(dateStr, todayStr, tomorrowStr) {
+  if (dateStr === todayStr) return 'Today';
+  if (dateStr === tomorrowStr) return 'Tomorrow';
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+function emptyMsgFor(dateStr, todayStr, tomorrowStr) {
+  if (dateStr === todayStr)    return 'No events today 🎉';
+  if (dateStr === tomorrowStr) return 'Nothing scheduled tomorrow';
+  return 'Nothing scheduled';
+}
+
 function sortEvs(arr) {
   return [...arr].sort((a, b) => evStart(a).localeCompare(evStart(b)));
 }
@@ -112,14 +127,23 @@ function renderWeek(events, today) {
       .slice(0, 5)
       .map(e => `<div class="pip" style="background:${calColour(e.calendar)}" title="${esc(e.summary)}"></div>`)
       .join('');
+    const classes = ['day-col'];
+    if (ds === todayStr)         classes.push('is-today');
+    if (ds === _selectedDateStr) classes.push('is-selected');
     html += `
-      <div class="day-col${ds === todayStr ? ' is-today' : ''}">
+      <div class="${classes.join(' ')}" onclick="selectDay('${ds}')">
         <span class="day-name">${DAYS[d.getDay()]}</span>
         <span class="day-num">${d.getDate()}</span>
         <div class="day-pips">${pips}</div>
       </div>`;
   }
   document.getElementById('weekGrid').innerHTML = html;
+}
+
+function selectDay(dateStr) {
+  _selectedDateStr = dateStr;
+  renderWeek(_events, new Date());
+  renderDayLists();
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -358,28 +382,44 @@ async function loadEvents() {
     ? ((await evRes.value.json()).events ?? [])
     : [];
 
-  const cfg = cfgRes.status === 'fulfilled'
+  _config = cfgRes.status === 'fulfilled'
     ? await cfgRes.value.json()
     : {};
 
   _events.forEach(e => calColour(e.calendar));
 
-  const today     = new Date();
-  const tomorrow  = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (!_selectedDateStr) _selectedDateStr = isoDate(new Date());
 
+  renderWeek(_events, new Date());
+  renderDayLists();
+  checkLeavingSoon();
+}
+
+function renderDayLists() {
+  const today       = new Date();
   const todayStr    = isoDate(today);
+  const tomorrow    = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = isoDate(tomorrow);
-  const schoolCal   = cfg.school_calendar ?? '';
 
-  const todayEvs    = sortEvs(_events.filter(e => evDateStr(e) === todayStr    && e.calendar !== schoolCal));
-  const tomorrowEvs = sortEvs(_events.filter(e => evDateStr(e) === tomorrowStr && e.calendar !== schoolCal));
-  const schoolEvs   = schoolCal
-    ? sortEvs(_events.filter(e => evDateStr(e) === todayStr && e.calendar === schoolCal))
+  const selectedStr = _selectedDateStr ?? todayStr;
+  const nextDate     = new Date(selectedStr + 'T00:00:00');
+  nextDate.setDate(nextDate.getDate() + 1);
+  const nextStr = isoDate(nextDate);
+
+  const schoolCal = _config.school_calendar ?? '';
+
+  const primaryEvs   = sortEvs(_events.filter(e => evDateStr(e) === selectedStr && e.calendar !== schoolCal));
+  const secondaryEvs = sortEvs(_events.filter(e => evDateStr(e) === nextStr      && e.calendar !== schoolCal));
+  const schoolEvs    = schoolCal
+    ? sortEvs(_events.filter(e => evDateStr(e) === selectedStr && e.calendar === schoolCal))
     : [];
 
-  setList('todayList',    todayEvs,    'No events today 🎉');
-  setList('tomorrowList', tomorrowEvs, 'Nothing scheduled tomorrow');
+  document.getElementById('todayLabel').textContent    = dayLabel(selectedStr, todayStr, tomorrowStr);
+  document.getElementById('tomorrowLabel').textContent = dayLabel(nextStr, todayStr, tomorrowStr);
+
+  setList('todayList',    primaryEvs,   emptyMsgFor(selectedStr, todayStr, tomorrowStr));
+  setList('tomorrowList', secondaryEvs, emptyMsgFor(nextStr, todayStr, tomorrowStr));
 
   const schoolSection = document.getElementById('schoolSection');
   if (schoolEvs.length > 0) {
@@ -387,14 +427,11 @@ async function loadEvents() {
     document.getElementById('schoolList').innerHTML = schoolEvs.map(eventCard).join('');
     if (schoolCal) {
       document.getElementById('schoolLabel').textContent =
-        `School Today — ${calLabel(schoolCal)}`;
+        `School ${dayLabel(selectedStr, todayStr, tomorrowStr)} — ${calLabel(schoolCal)}`;
     }
   } else {
     schoolSection.style.display = 'none';
   }
-
-  renderWeek(_events, today);
-  checkLeavingSoon();
 }
 
 async function loadCountdown() {
@@ -490,6 +527,26 @@ async function toggleChore(el) {
 
   // Re-sync after a short delay so HA state catches up
   setTimeout(loadChores, 1500);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Quick launch — try the native app, fall back to the website
+// ══════════════════════════════════════════════════════════════════
+function openAppOrWeb(appUri, webUrl, evt) {
+  if (evt) evt.preventDefault();
+
+  let didHide = false;
+  const onVisibility = () => { if (document.hidden) didHide = true; };
+  document.addEventListener('visibilitychange', onVisibility);
+
+  window.location.href = appUri;
+
+  setTimeout(() => {
+    document.removeEventListener('visibilitychange', onVisibility);
+    if (!didHide) window.location.href = webUrl;
+  }, 1200);
+
+  return false;
 }
 
 // ══════════════════════════════════════════════════════════════════
