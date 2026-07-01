@@ -571,6 +571,28 @@ body[data-wx="clear-night"]    { --bg: #1C2240; --surface: #242A4A; --border: #2
   animation: wx-cloud-drift linear infinite;
 }
 
+.wx-cloud::before,
+.wx-cloud::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: inherit;
+}
+
+.wx-cloud::before {
+  width: 220px;
+  height: 220px;
+  top: -100px;
+  left: 60px;
+}
+
+.wx-cloud::after {
+  width: 170px;
+  height: 170px;
+  top: -70px;
+  left: 260px;
+}
+
 @keyframes wx-cloud-drift {
   from { transform: translateX(-500px); }
   to   { transform: translateX(calc(100vw + 500px)); }
