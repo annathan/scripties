@@ -132,8 +132,10 @@ done
 ok "Ollama is ready"
 
 # --- 8. Pull model ---
-step "Pulling llama3.1:8b (first run will download ~5 GB)"
-docker exec ollama ollama pull llama3.1:8b
+# gemma3:4b fits in 4GB VRAM (~2.5 GB) with room to spare — fast and capable.
+# Swap for llama3.2:3b (faster) or mistral:7b-instruct-q4_0 (smarter, slower).
+step "Pulling gemma3:4b (first run will download ~2.5 GB)"
+docker exec ollama ollama pull gemma3:4b
 ok "Model ready"
 
 # --- Done ---
