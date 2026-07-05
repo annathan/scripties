@@ -2,7 +2,7 @@
 
 A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-like frontend) with NVIDIA GPU acceleration. Designed for an Ubuntu home server, accessible from any device on the local network.
 
-**Hardware used:** RTX 3060 12GB, 32GB RAM — runs 8B models fully on GPU with headroom for 13B quantised.
+**Hardware used:** MSI Thin 15, RTX 2050 4GB VRAM — runs 3B–4B models fully on GPU at good speed. 7B models fit with tight quantisation; 8B models spill into RAM and are noticeably slower.
 
 ---
 
@@ -10,16 +10,17 @@ A Docker Compose stack that runs Ollama (LLM backend) and Open WebUI (ChatGPT-li
 
 ```
 1.  Install Ubuntu         → ubuntu install + NVIDIA drivers
-2.  Harden the server      → harden.sh
-3.  Start the stack        → setup.sh
-4.  System prompt          → paste system-prompt.txt into Admin Panel
-5.  Google sign-in         → .env + Google Cloud Console
-6.  Install as an app      → PWA in Chrome/Safari
-7.  Web search             → SearXNG (already in stack, enable in Admin Panel)
-8.  Feature requests       → tools/feature-request.py + ntfy app on your phone
-9.  Home automation        → tools/home-assistant.py + home-automation/packages/llm_conversation.yaml
-10. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
-11. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
+2.  Laptop setup           → lid close, suspend, GPU persistence
+3.  Harden the server      → harden.sh
+4.  Start the stack        → setup.sh
+5.  System prompt          → paste system-prompt.txt into Admin Panel
+6.  Google sign-in         → .env + Google Cloud Console
+7.  Install as an app      → PWA in Chrome/Safari
+8.  Web search             → SearXNG (already in stack, enable in Admin Panel)
+9.  Feature requests       → tools/feature-request.py + ntfy app on your phone
+10. Home automation        → tools/home-assistant.py + home-automation/packages/llm_conversation.yaml
+11. Azure monitoring       → onboard-arc.sh + deploy-dcr.ps1
+12. Remote access          → Entra App Proxy or Cloudflare Tunnel (when ready)
 ```
 
 ---
@@ -48,7 +49,68 @@ nvidia-smi   # verify — should show RTX 3060 with 12GB VRAM
 
 ---
 
-## Part 2 — Harden the Server
+## Part 2 — Laptop-Specific Setup
+
+The MSI Thin 15 is running headless as a server. Two things will bite you if you skip this step: closing the lid suspends the machine (killing the stack), and Ubuntu's power management may throttle the GPU under sustained load.
+
+### Prevent suspend when lid is closed
+
+```bash
+sudo nano /etc/systemd/logind.conf
+```
+
+Set these lines (uncomment if they're commented out):
+
+```ini
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+```
+
+Apply without rebooting:
+
+```bash
+sudo systemctl restart systemd-logind
+```
+
+The lid can now be closed and the machine keeps running. Verify with `systemctl status` — it should stay active.
+
+### Keep the machine awake (disable auto-suspend)
+
+```bash
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+```
+
+### Disable GPU power saving (prevents cold-start latency on first inference)
+
+```bash
+sudo nvidia-smi -pm 1        # enable persistence mode — GPU stays warm
+sudo nvidia-smi --auto-boost-default=0
+```
+
+Make persistence mode survive reboots by adding it to `/etc/rc.local`:
+
+```bash
+echo '#!/bin/bash
+nvidia-smi -pm 1
+exit 0' | sudo tee /etc/rc.local
+sudo chmod +x /etc/rc.local
+```
+
+### Verify thermals under load
+
+Laptop sustained GPU load can cause throttling. Install monitoring tools:
+
+```bash
+sudo apt install nvtop lm-sensors -y
+sudo sensors-detect --auto
+```
+
+Run `nvtop` while a model is generating to watch GPU temp and clock speed. The RTX 2050 will throttle if it hits ~90°C — if that happens, clean the vents or point a small fan at the underside.
+
+---
+
+## Part 3 — Harden the Server
 
 Run this **before** setting up Docker. It configures SSH, firewall, and automatic security updates.
 
@@ -75,7 +137,7 @@ ssh-copy-id youruser@192.168.x.x
 
 ---
 
-## Part 3 — Set Up the Stack
+## Part 4 — Set Up the Stack
 
 ```bash
 chmod +x setup.sh
@@ -105,7 +167,7 @@ Re-run `./setup.sh` after saving.
 
 ---
 
-## Part 4 — System Prompt (Tone + Context)
+## Part 5 — System Prompt (Tone + Context)
 
 This is the single most impactful config change — it tells the model how to behave in every conversation before anyone types a word.
 
@@ -137,7 +199,7 @@ The split means the tone is consistent for both of you, but her professional con
 
 ---
 
-## Part 5 — Google Sign-In
+## Part 6 — Google Sign-In
 
 
 Open WebUI supports Google OAuth — sign in with your Google accounts, no separate passwords.
@@ -165,7 +227,7 @@ Open WebUI supports Google OAuth — sign in with your Google accounts, no separ
 
 ---
 
-## Part 6 — Use it Like an App + Voice Input
+## Part 7 — Use it Like an App + Voice Input
 
 Open WebUI is a **Progressive Web App (PWA)** — install it as a standalone app with its own icon and no browser bar.
 
@@ -192,7 +254,7 @@ Open WebUI has a built-in microphone button in the chat input bar. Tap it, speak
 
 ---
 
-## Part 7 — Web Search (SearXNG)
+## Part 8 — Web Search (SearXNG)
 
 SearXNG is already in the Docker stack — it's a self-hosted meta-search engine that queries Google, Bing, DuckDuckGo, and Wikipedia on your behalf. Nothing leaves the house with your identity attached.
 
@@ -212,7 +274,7 @@ A search toggle button appears in the chat input bar. When active, the model fet
 
 ---
 
-## Part 8 — Feature Requests to Drew (ntfy)
+## Part 9 — Feature Requests to Drew (ntfy)
 
 Jess can say "tell Drew I want X" in any conversation and the model will send you a push notification. No buttons, no forms — just natural language.
 
@@ -255,7 +317,7 @@ Jess types anything like *"this is great but can you tell Drew I'd like it to re
 
 ---
 
-## Part 9 — Home Automation Integration
+## Part 10 — Home Automation Integration
 
 Two parts: a chat tool so Jess can ask about and control the house directly in chat, and a package that wires HA's voice assistant up to Ollama.
 
@@ -312,7 +374,7 @@ This lets you say *"Hey Google, ask Home Assistant to turn on the pool pump"* an
 
 ---
 
-## Part 10 — Managing Docker from Windows (Portainer)
+## Part 11 — Managing Docker from Windows (Portainer)
 
 Portainer runs as part of the stack and gives you a browser-based Docker management UI — no need to SSH in for day-to-day tasks.
 
@@ -326,7 +388,7 @@ From Portainer you can:
 
 ---
 
-## Part 11 — Azure Monitoring (Sentinel)
+## Part 12 — Azure Monitoring (Sentinel)
 
 Ships SSH auth events, sudo logs, and firewall activity to your existing Sentinel workspace via Azure Arc + Azure Monitor Agent.
 
@@ -386,7 +448,7 @@ Useful analytics rules to enable in Sentinel:
 
 ---
 
-## Part 12 — Remote Access from School (Phase 2)
+## Part 13 — Remote Access from School (Phase 2)
 
 Two options — pick based on your Azure licensing.
 
@@ -430,15 +492,20 @@ Uncomment the `cloudflared` service in `docker-compose.yml`, then:
 | List models | `docker exec ollama ollama list` |
 | Check what's running on GPU | `docker exec ollama ollama ps` |
 
-### Models your 3060 (12GB VRAM) can run
+### Models your RTX 2050 (4GB VRAM) can run
+
+The 4GB ceiling means 8B models won't fit entirely on GPU. Stick to 3B–4B for fast, fully GPU-accelerated responses. 7B models work but need aggressive quantisation and are measurably slower.
 
 | Model | VRAM | Speed | Good for |
 |---|---|---|---|
-| `llama3.1:8b` | ~5 GB | Fast | General chat, Q&A, writing (installed by default) |
-| `mistral:7b` | ~4.5 GB | Fast | General use, instructions |
-| `gemma2:9b` | ~5.5 GB | Fast | Reasoning, following instructions |
-| `llama3.1:13b` | ~8 GB | Moderate | Noticeably smarter, still fits entirely on GPU |
-| `phi3:mini` | ~2.3 GB | Very fast | Quick answers, low footprint |
+| `gemma3:4b` | ~2.5 GB | Fast | Best all-round at this size — strong reasoning and instruction following (installed by default) |
+| `llama3.2:3b` | ~2.0 GB | Very fast | Meta's latest small model, good for chat and Q&A |
+| `phi3.5:mini` | ~2.2 GB | Very fast | Microsoft's 3.8B model, punches above its weight |
+| `qwen2.5:3b` | ~1.9 GB | Very fast | Strong on structured tasks and multilingual |
+| `mistral:7b-instruct-q4_0` | ~3.8 GB | Moderate | Fits on 4GB with Q4 quantisation; noticeably slower than the 3B models |
+| `llama3.1:8b` | ~5 GB | Slow | Won't fit on GPU — runs partly in RAM, expect 3–4× slower responses |
+
+**Recommendation:** Start with `gemma3:4b`. If responses feel slow, drop to `llama3.2:3b`. If you need smarter answers and can wait, try `mistral:7b-instruct-q4_0`.
 
 ---
 
