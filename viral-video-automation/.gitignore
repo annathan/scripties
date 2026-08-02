@@ -16,6 +16,12 @@ assets/music/*
 !assets/music/.gitkeep
 !assets/music/README.md
 
+# generated mascot clips -- regenerate via scripts/generate_mascot_assets.py,
+# the design lives in config/config.yaml + DESIGN_BRIEF.md, not the binary
+assets/mascot/*
+!assets/mascot/.gitkeep
+!assets/mascot/DESIGN_BRIEF.md
+
 # python
 __pycache__/
 *.pyc

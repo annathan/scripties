@@ -30,6 +30,26 @@ law (COPPA) for child-directed content — it auto-disables personalized ads
 and comments on the video. Style guardrails in config also force
 stylized/cartoon visuals rather than photorealistic depictions of children.
 
+## The mascot
+
+The channel has one recurring character (`config.yaml` → `mascot:`,
+placeholder name "Puff") — a signature, not the show. It bounces in as a
+bumper at the very start of every video, pops into a corner briefly at each
+scene transition to react, and bounces out at the end. Scene content itself
+is always theme-driven (colors, counting, animals, ...) and never depends
+on the mascot appearing in it.
+
+The mascot's clips are pre-rendered **once** via
+`python scripts/generate_mascot_assets.py` into `assets/mascot/`, then
+composited into every subsequent video with ffmpeg — this sidesteps
+text-to-video models' weak character consistency across independently
+generated clips (the single biggest practical obstacle to a recurring
+character), and is much cheaper than regenerating it per video. Re-run that
+script any time you tweak the design in config.
+
+Design rationale, and — if the channel takes off — how to turn the AI
+design into real merch/stickers, is in `assets/mascot/DESIGN_BRIEF.md`.
+
 ## Pipeline
 
 ```
@@ -74,8 +94,11 @@ concatenation, captions, and music mixing.
 clips locally via ffmpeg instead of calling a real text-to-video API. You
 still need `YOUTUBE_API_KEY` (free, read-only) and `ANTHROPIC_API_KEY` for
 stages 1–2, but you can validate the whole scan → ideate → generate →
-review flow, including captions and music mixing, before spending anything
-on real video generation or setting up YouTube upload OAuth.
+review flow, including captions, mascot compositing, and music mixing,
+before spending anything on real video generation or setting up YouTube
+upload OAuth. Run `python scripts/generate_mascot_assets.py` once first
+(also works with `VIDEO_PROVIDER=mock`) so stage 3 has bumper/reaction
+clips to composite in.
 
 ### Credentials, one stage at a time
 
@@ -102,11 +125,11 @@ one-line change once you're confident.
 ## Project layout
 
 ```
-config/config.yaml           all the tunable pipeline settings
+config/config.yaml           all the tunable pipeline settings, incl. mascot design
 src/
   trend_scanner.py           stage 1
   ideation.py                stage 2
-  video_generator.py         stage 3 (orchestration: scenes -> concat -> captions -> music)
+  video_generator.py         stage 3 (scenes -> concat -> mascot composite -> captions -> bumpers -> music)
   video_providers/           stage 3 (pluggable text-to-video backends)
     base.py                  the interface
     mock.py                  keyless local placeholder (ffmpeg color+text)
@@ -114,8 +137,12 @@ src/
   review.py                  stage 4
   uploader.py                stage 5
   pipeline.py                CLI entrypoint wiring it all together
-scripts/setup_youtube_oauth.py   one-time OAuth authorization for uploads
-assets/music/                 your own royalty-free/licensed tracks (gitignored)
+scripts/
+  setup_youtube_oauth.py     one-time OAuth authorization for uploads
+  generate_mascot_assets.py  renders the mascot's clip library (run once, or after a redesign)
+assets/
+  music/                     your own royalty-free/licensed tracks (gitignored)
+  mascot/                    generated mascot clips (gitignored) + DESIGN_BRIEF.md
 data/                         all generated output (gitignored except folder structure)
 ```
 

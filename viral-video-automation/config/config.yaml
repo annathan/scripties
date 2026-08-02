@@ -39,6 +39,7 @@ ideation:
     - "No real people, brands, or copyrighted characters."
     - "Content must be non-violent, non-scary, and age-appropriate for under-8s."
     - "No dialogue or imagery implying the video was made by a real on-screen host or creator."
+    - "Do not invent a recurring host/narrator character in scenes — the channel already has a mascot (composited in separately at intro/transitions/outro). Keep scene visual_prompts focused purely on the theme's subject matter (the animals, colors, shapes, etc.), not a character presenting it."
 
 # --- Stage 3: video generation ---
 video_generation:
@@ -49,6 +50,44 @@ video_generation:
   music:
     dir: assets/music
     license_notes: "Only place music here that you have a license to use commercially (royalty-free library with a commercial/YouTube license, or fully AI-generated/owned). See assets/music/README.md."
+
+# Recurring channel mascot. Appears as a standalone bumper at the very start
+# and end of each video, plus a brief corner pop-in between scenes -- it's a
+# signature, not the star: scene content (video_generation above) is theme-
+# driven and never depends on the mascot appearing in it.
+#
+# Assets are pre-generated ONCE via `python scripts/generate_mascot_assets.py`
+# (see assets/mascot/DESIGN_BRIEF.md) and then reused across every video via
+# ffmpeg compositing -- this sidesteps text-to-video models' weak character
+# consistency across independently-generated clips, and is far cheaper than
+# regenerating the mascot per video.
+mascot:
+  enabled: true
+  name: "Puff" # placeholder -- rename freely; nothing else keys off this string
+  visual_description: >
+    A small round bouncy forest creature: single warm gold-orange fluffy
+    body with a dandelion-puff texture, big simple white eyes with black
+    pupils, no clothing or props, tiny springy feet. Flat 2.5D storybook
+    style, bold clean linework, flat color fills -- simple enough as a
+    silhouette to work as a sticker or small icon.
+  assets_dir: assets/mascot
+  bumper_background: "a soft solid warm-cream pastel background, simple and uncluttered, no other elements"
+  chroma_key_color: "0x00FF00"
+  reaction_position: top_right # top_right | top_left | bottom_right | bottom_left -- avoid bottom, captions live there
+  reaction_size_pct: 30 # reaction clip rendered at this % of frame width when overlaid
+  clips:
+    bounce_in:
+      prompt_suffix: "Puff springs energetically into frame from off-screen, lands with a little bounce, and looks at the camera with a big cheerful smile, ready to introduce today's video."
+      duration_seconds: 2.5
+      composited: false # standalone bumper clip, prepended as-is
+    reaction:
+      prompt_suffix: "Puff pops up and does one quick delighted bounce-in-place cheer, like reacting to something wonderful, then holds a happy pose."
+      duration_seconds: 1.5
+      composited: true # rendered on a chroma-key background and overlaid on top of scene content
+    bounce_out:
+      prompt_suffix: "Puff gives a friendly wave, then springs back off-screen the way it came, bye for now."
+      duration_seconds: 2.0
+      composited: false # standalone bumper clip, appended as-is
 
 # --- Stage 4: human review ---
 review:

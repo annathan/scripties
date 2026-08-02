@@ -29,7 +29,16 @@ class MockVideoProvider(VideoProvider):
         self, prompt: str, duration_seconds: float, resolution: str, out_path: Path
     ) -> Path:
         width, height = (int(x) for x in resolution.split("x"))
-        color = "0x" + hashlib.md5(prompt.encode()).hexdigest()[:6]
+        # Real providers are asked (via the prompt text) to render mascot
+        # "reaction" clips on a solid chroma-key green background so they can
+        # be composited over scene content. The mock provider can't actually
+        # follow that instruction, but it recognizes the request and uses a
+        # real, consistent chroma-key green so the compositing step in
+        # video_generator.py is still exercisable end-to-end without keys.
+        if "chroma key" in prompt.lower() or "chroma-key" in prompt.lower():
+            color = "0x00FF00"
+        else:
+            color = "0x" + hashlib.md5(prompt.encode()).hexdigest()[:6]
 
         wrapped = "\n".join(textwrap.wrap(prompt, width=28)[:6])
         text = _escape_drawtext(wrapped)

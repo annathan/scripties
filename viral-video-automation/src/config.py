@@ -37,6 +37,10 @@ class Settings:
         return cfg
 
     @property
+    def mascot(self) -> dict:
+        return self.raw.get("mascot", {"enabled": False})
+
+    @property
     def review(self) -> dict:
         return self.raw["review"]
 

@@ -56,6 +56,99 @@ def _pick_music_track(settings: Settings) -> Path | None:
     return random.choice(tracks) if tracks else None
 
 
+_REACTION_POSITIONS = {
+    "top_right": ("W-w-{m}", "{m}"),
+    "top_left": ("{m}", "{m}"),
+    "bottom_right": ("W-w-{m}", "H-h-{m}"),
+    "bottom_left": ("{m}", "H-h-{m}"),
+}
+
+
+def _composite_mascot_reactions(
+    combined_path: Path, work_dir: Path, settings: Settings, num_scenes: int, scene_duration: float
+) -> Path:
+    """Overlays the mascot's pre-rendered 'reaction' clip (chroma-keyed) at
+    each scene transition, in a corner, on top of the ongoing scene content.
+    Falls back to returning combined_path unchanged if the mascot is
+    disabled, there's only one scene (no transitions), or the asset hasn't
+    been generated yet."""
+    mascot = settings.mascot
+    if not mascot.get("enabled") or num_scenes < 2:
+        return combined_path
+
+    assets_dir = PROJECT_ROOT / mascot["assets_dir"]
+    reaction_clip = assets_dir / "reaction.mp4"
+    if not reaction_clip.exists():
+        print(f"[video_generator] mascot reaction clip not found at {reaction_clip}, skipping pop-ins "
+              "(run scripts/generate_mascot_assets.py)")
+        return combined_path
+
+    reaction_duration = mascot["clips"]["reaction"]["duration_seconds"]
+    size_frac = mascot.get("reaction_size_pct", 30) / 100
+    margin = 24
+    x_expr, y_expr = (
+        v.format(m=margin) for v in _REACTION_POSITIONS[mascot.get("reaction_position", "top_right")]
+    )
+
+    num_transitions = num_scenes - 1
+    inputs = ["-i", str(combined_path)]
+    for _ in range(num_transitions):
+        inputs += ["-i", str(reaction_clip)]
+
+    filter_parts = []
+    labels = []
+    for i in range(num_transitions):
+        label = f"r{i}"
+        filter_parts.append(
+            f"[{i + 1}:v]scale=iw*{size_frac}:-1,colorkey={mascot['chroma_key_color']}:0.3:0.1[{label}]"
+        )
+        labels.append(label)
+
+    current = "0:v"
+    for i, label in enumerate(labels):
+        t_start = (i + 1) * scene_duration - reaction_duration / 2
+        t_end = t_start + reaction_duration
+        out_label = f"v{i}"
+        filter_parts.append(
+            f"[{current}][{label}]overlay=x={x_expr}:y={y_expr}:enable='between(t,{t_start:.2f},{t_end:.2f})'[{out_label}]"
+        )
+        current = out_label
+
+    out_path = work_dir / "with_mascot.mp4"
+    _run_ffmpeg(
+        [*inputs, "-filter_complex", ";".join(filter_parts), "-map", f"[{current}]", "-map", "0:a", "-c:a", "copy", str(out_path)]
+    )
+    return out_path
+
+
+def _add_bumpers(core_path: Path, work_dir: Path, settings: Settings) -> Path:
+    """Prepends bounce_in and appends bounce_out (the mascot's standalone
+    intro/outro clips) around the finished scene content. Falls back to
+    returning core_path unchanged if the mascot is disabled or the bumper
+    assets haven't been generated yet."""
+    mascot = settings.mascot
+    if not mascot.get("enabled"):
+        return core_path
+
+    assets_dir = PROJECT_ROOT / mascot["assets_dir"]
+    bounce_in, bounce_out = assets_dir / "bounce_in.mp4", assets_dir / "bounce_out.mp4"
+    if not bounce_in.exists() or not bounce_out.exists():
+        print(f"[video_generator] mascot bumper clips not found in {assets_dir}, skipping intro/outro "
+              "(run scripts/generate_mascot_assets.py)")
+        return core_path
+
+    out_path = work_dir / "with_bumpers.mp4"
+    _run_ffmpeg(
+        [
+            "-i", str(bounce_in), "-i", str(core_path), "-i", str(bounce_out),
+            "-filter_complex", "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]",
+            "-map", "[v]", "-map", "[a]",
+            str(out_path),
+        ]
+    )
+    return out_path
+
+
 def generate_video_for_concept(concept: dict, settings: Settings | None = None) -> Path:
     settings = settings or load_settings()
     provider = get_provider(settings)
@@ -86,12 +179,14 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
     combined = work_dir / "combined.mp4"
     _run_ffmpeg(["-f", "concat", "-safe", "0", "-i", "concat_list.txt", "-c", "copy", "combined.mp4"], cwd=work_dir)
 
+    with_mascot = _composite_mascot_reactions(combined, work_dir, settings, len(scenes), scene_duration)
+
     srt_path = work_dir / "captions.srt"
     _build_srt(scenes, scene_duration, srt_path)
     captioned = work_dir / "captioned.mp4"
     _run_ffmpeg(
         [
-            "-i", "combined.mp4",
+            "-i", str(with_mascot),
             "-vf", "subtitles=captions.srt:force_style='FontName=Arial,FontSize=18,"
             "PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3'",
             "-c:a", "copy",
@@ -100,24 +195,27 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
         cwd=work_dir,
     )
 
-    final_path = item_dir / "final.mp4"
+    core_path = work_dir / "core.mp4"
     music_track = _pick_music_track(settings)
     if music_track is None:
-        (work_dir / "captioned.mp4").replace(final_path)
+        captioned.replace(core_path)
         print("[video_generator] no music track found in assets/music/, shipping without background music")
     else:
         _run_ffmpeg(
             [
-                "-i", str(work_dir / "captioned.mp4"),
+                "-i", str(captioned),
                 "-stream_loop", "-1", "-i", str(music_track),
                 "-filter_complex",
                 "[1:a]volume=0.25[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
                 "-map", "0:v", "-map", "[aout]",
                 "-shortest",
                 "-c:v", "copy",
-                str(final_path),
+                str(core_path),
             ]
         )
+
+    final_path = item_dir / "final.mp4"
+    _add_bumpers(core_path, work_dir, settings).replace(final_path)
 
     metadata = {
         "slug": slug,
