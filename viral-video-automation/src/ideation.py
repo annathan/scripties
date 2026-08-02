@@ -8,18 +8,24 @@ provider), and upload metadata (description, tags).
 
 The style_guardrails from config.yaml are injected into every request so
 originality/safety constraints aren't something each concept has to
-remember on its own.
+remember on its own. Recently-used titles are also injected so repeated
+runs don't quietly fill the review queue with near-duplicates.
 """
 from __future__ import annotations
 
 import json
+import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import anthropic
 
-from .config import Settings, load_settings
+from .config import PROJECT_ROOT, Settings, load_settings
+from .retry import with_retry
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """\
 You are a creative director for an original kids' animated video channel.
@@ -35,7 +41,7 @@ Hard rules (non-negotiable):
 For each concept produce:
 - title: a catchy, original YouTube title (not copied from any example)
 - premise: one sentence describing the story/idea
-- scenes: a list of {scenes_per_video} scenes, each with:
+- scenes: a list of exactly {scenes_per_video} scenes, each with:
     - narration: the line(s) spoken/sung during this scene (simple, warm, age-appropriate)
     - visual_prompt: a detailed text-to-video prompt describing the scene \
       (characters, setting, action, animation style — always stylized/cartoon, \
@@ -43,8 +49,12 @@ For each concept produce:
 - description: a YouTube video description (2-3 sentences + relevant hashtags)
 - tags: 8-12 relevant search tags
 
-Respond with ONLY a JSON array of concept objects, no prose before or after.
+Respond with ONLY a JSON array of concept objects — no prose, no markdown code fences, before or after.
 """
+
+REQUIRED_CONCEPT_KEYS = ("title", "premise", "scenes", "description", "tags")
+REQUIRED_SCENE_KEYS = ("narration", "visual_prompt")
+MAX_IDEATION_ATTEMPTS = 3
 
 
 @dataclass
@@ -73,6 +83,74 @@ def _summarize_trends(trend_report: dict) -> str:
     return "\n".join(lines) if lines else "No qualifying trend data this run."
 
 
+def _recent_titles(settings: Settings, limit: int) -> list[str]:
+    """Titles from the most recently-generated concept files, so the
+    ideation prompt can tell the model what's already been made and steer
+    it away from repeating itself run after run."""
+    if limit <= 0:
+        return []
+    concepts_dir = PROJECT_ROOT / "data" / "concepts"
+    if not concepts_dir.exists():
+        return []
+
+    titles: list[str] = []
+    for path in sorted(concepts_dir.glob("concepts_*.json"), reverse=True):
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        for concept in data.get("concepts", []):
+            if title := concept.get("title"):
+                titles.append(title)
+        if len(titles) >= limit:
+            break
+    return titles[:limit]
+
+
+def _extract_json_text(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
+def _parse_and_validate(text: str, expected_scene_count: int) -> list[dict]:
+    concepts = json.loads(_extract_json_text(text))
+    if not isinstance(concepts, list) or not concepts:
+        raise ValueError("expected a non-empty JSON array of concepts")
+
+    for concept in concepts:
+        missing = [k for k in REQUIRED_CONCEPT_KEYS if k not in concept]
+        if missing:
+            raise ValueError(f"concept {concept.get('title', '<untitled>')!r} missing key(s): {missing}")
+        if len(concept["scenes"]) != expected_scene_count:
+            raise ValueError(
+                f"concept {concept['title']!r} has {len(concept['scenes'])} scenes, expected {expected_scene_count}"
+            )
+        for scene in concept["scenes"]:
+            missing_scene_keys = [k for k in REQUIRED_SCENE_KEYS if k not in scene]
+            if missing_scene_keys:
+                raise ValueError(f"concept {concept['title']!r} has a scene missing key(s): {missing_scene_keys}")
+
+    return concepts
+
+
+@with_retry(
+    attempts=3,
+    base_delay=5.0,
+    exceptions=(
+        anthropic.APIConnectionError,
+        anthropic.APITimeoutError,
+        anthropic.RateLimitError,
+        anthropic.InternalServerError,
+        anthropic.OverloadedError,
+    ),
+)
+def _create_message(client: anthropic.Anthropic, **kwargs):
+    return client.messages.create(**kwargs)
+
+
 def generate_concepts(trend_report_path: Path, settings: Settings | None = None) -> Path:
     settings = settings or load_settings()
     if not settings.anthropic_api_key:
@@ -84,34 +162,56 @@ def generate_concepts(trend_report_path: Path, settings: Settings | None = None)
     trend_summary = _summarize_trends(trend_report)
 
     cfg = settings.ideation
+    scenes_per_video = settings.video_generation["scenes_per_video"]
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         guardrails="\n".join(f"- {g}" for g in cfg["style_guardrails"]),
-        scenes_per_video=settings.video_generation["scenes_per_video"],
+        scenes_per_video=scenes_per_video,
     )
+
+    recent_titles = _recent_titles(settings, cfg.get("avoid_repeating_last_n_titles", 0))
+    user_message = (
+        f"Trend patterns for niche '{settings.niche}':\n\n{trend_summary}\n\n"
+        f"Generate {cfg['concepts_per_run']} original video concepts."
+    )
+    if recent_titles:
+        user_message += (
+            "\n\nAlready-used titles this channel has published or generated recently — "
+            "invent something distinct from all of these, not a variation on any of them:\n"
+            + "\n".join(f"- {t}" for t in recent_titles)
+        )
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    response = client.messages.create(
-        model=cfg["model"],
-        max_tokens=4096,
-        system=system_prompt,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Trend patterns for niche '{settings.niche}':\n\n{trend_summary}\n\n"
-                    f"Generate {cfg['concepts_per_run']} original video concepts."
-                ),
-            }
-        ],
-    )
+    last_error: Exception | None = None
+    concepts_raw: list[dict] | None = None
 
-    text = "".join(block.text for block in response.content if block.type == "text")
-    concepts_raw = json.loads(text)
+    for attempt in range(1, MAX_IDEATION_ATTEMPTS + 1):
+        response = _create_message(
+            client,
+            model=cfg["model"],
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        text = "".join(block.text for block in response.content if block.type == "text")
+        try:
+            concepts_raw = _parse_and_validate(text, scenes_per_video)
+            break
+        except (json.JSONDecodeError, ValueError) as exc:
+            last_error = exc
+            logger.warning(f"ideation response failed validation (attempt {attempt}/{MAX_IDEATION_ATTEMPTS}): {exc}")
+            user_message += (
+                "\n\nYour previous response could not be used: "
+                f"{exc}. Respond again with ONLY a valid JSON array matching the required schema exactly, "
+                "no prose or markdown fences."
+            )
+
+    if concepts_raw is None:
+        raise RuntimeError(f"ideation failed to produce valid concepts after {MAX_IDEATION_ATTEMPTS} attempts: {last_error}")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = settings.path(f"data/concepts/concepts_{timestamp}.json")
     out_path.write_text(json.dumps({"generated_at": timestamp, "source_trend_report": str(trend_report_path), "concepts": concepts_raw}, indent=2))
-    print(f"[ideation] wrote {len(concepts_raw)} concepts to {out_path}")
+    logger.info(f"wrote {len(concepts_raw)} concepts to {out_path}")
     return out_path
 
 

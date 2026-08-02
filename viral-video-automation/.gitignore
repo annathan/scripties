@@ -9,6 +9,7 @@ data/concepts/*
 data/review_queue/*
 data/approved/*
 data/uploaded/*
+data/pipeline.log
 !data/**/.gitkeep
 
 # music you add locally (licensing varies per file, don't assume it's OK to commit)

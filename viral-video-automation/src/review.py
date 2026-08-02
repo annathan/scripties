@@ -7,10 +7,14 @@ the safety valve for both quality and YouTube policy compliance.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import PROJECT_ROOT, Settings, load_settings
+
+logger = logging.getLogger(__name__)
 
 
 def list_pending(settings: Settings | None = None) -> list[dict]:
@@ -45,7 +49,7 @@ def approve(slug: str, settings: Settings | None = None) -> Path:
     shutil.copy2(src_dir / "final.mp4", dest_dir / "final.mp4")
     (dest_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     metadata_path.write_text(json.dumps(metadata, indent=2))
-    print(f"[review] approved {slug} -> {dest_dir}")
+    logger.info(f"approved {slug} -> {dest_dir}")
     return dest_dir
 
 
@@ -60,7 +64,7 @@ def reject(slug: str, reason: str = "", settings: Settings | None = None) -> Non
     metadata["status"] = "rejected"
     metadata["rejection_reason"] = reason
     metadata_path.write_text(json.dumps(metadata, indent=2))
-    print(f"[review] rejected {slug}" + (f" ({reason})" if reason else ""))
+    logger.info(f"rejected {slug}" + (f" ({reason})" if reason else ""))
 
 
 def build_gallery(settings: Settings | None = None) -> Path:
@@ -99,15 +103,54 @@ code {{ background: #000; padding: 2px 6px; border-radius: 4px; }}
 """
     out_path = queue_dir / "index.html"
     out_path.write_text(html)
-    print(f"[review] wrote gallery to {out_path}")
+    logger.info(f"wrote gallery to {out_path}")
     return out_path
+
+
+def prune(older_than_days: int = 14, settings: Settings | None = None) -> list[str]:
+    """Deletes the generated video (final.mp4 + work/) for rejected items
+    older than older_than_days, keeping metadata.json (including the
+    rejection reason) for an audit trail. Keeps the review queue from
+    growing forever across an unattended, twice-a-week cadence."""
+    settings = settings or load_settings()
+    queue_dir = PROJECT_ROOT / settings.review["queue_dir"]
+    if not queue_dir.exists():
+        return []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+    pruned = []
+    for item_dir in sorted(queue_dir.iterdir()):
+        metadata_path = item_dir / "metadata.json"
+        if not metadata_path.exists():
+            continue
+        metadata = json.loads(metadata_path.read_text())
+        if metadata.get("status") != "rejected":
+            continue
+
+        generated_at = metadata.get("generated_at")
+        if not generated_at:
+            continue
+        generated_dt = datetime.strptime(generated_at, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        if generated_dt > cutoff:
+            continue
+
+        final_video = item_dir / "final.mp4"
+        work_dir = item_dir / "work"
+        if final_video.exists():
+            final_video.unlink()
+        if work_dir.exists():
+            shutil.rmtree(work_dir)
+        pruned.append(metadata["slug"])
+        logger.info(f"pruned rejected item {metadata['slug']} (generated {generated_at})")
+
+    return pruned
 
 
 if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("usage: python -m src.review [list|gallery|approve <slug>|reject <slug> [reason]]")
+        print("usage: python -m src.review [list|gallery|approve <slug>|reject <slug> [reason]|prune [days]]")
         raise SystemExit(1)
 
     cmd = sys.argv[1]
@@ -120,6 +163,10 @@ if __name__ == "__main__":
         approve(sys.argv[2])
     elif cmd == "reject":
         reject(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "")
+    elif cmd == "prune":
+        days = int(sys.argv[2]) if len(sys.argv) > 2 else 14
+        pruned = prune(days)
+        print(f"pruned {len(pruned)} rejected item(s) older than {days} days")
     else:
         print(f"unknown command {cmd!r}")
         raise SystemExit(1)

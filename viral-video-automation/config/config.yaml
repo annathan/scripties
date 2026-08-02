@@ -28,6 +28,10 @@ trend_scanner:
 ideation:
   model: claude-sonnet-5
   concepts_per_run: 5
+  # How many previously-generated titles to remind the model to avoid
+  # repeating (reduces near-duplicate concepts showing up in the review
+  # queue run after run). 0 disables the check.
+  avoid_repeating_last_n_titles: 30
   # Style/safety guardrails injected into every ideation prompt. These exist
   # to keep output as ORIGINAL animated content inspired by trend patterns
   # (topics, pacing, structure) rather than reproductions of any specific
@@ -47,6 +51,10 @@ video_generation:
   target_duration_seconds: 60
   scenes_per_video: 6
   resolution: "1080x1920" # vertical, works for Shorts + regular uploads
+  # Hard cap on how many videos one `generate` run will produce, independent
+  # of how many concepts stage 2 ideated -- a spend/runaway-cost guardrail
+  # for unattended runs. null = generate everything in the concepts file.
+  max_videos_per_run: 6
   music:
     dir: assets/music
     license_notes: "Only place music here that you have a license to use commercially (royalty-free library with a commercial/YouTube license, or fully AI-generated/owned). See assets/music/README.md."

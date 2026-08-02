@@ -10,6 +10,7 @@ data/review_queue/<slug>/ for stage 4 (human review).
 from __future__ import annotations
 
 import json
+import logging
 import random
 import re
 import subprocess
@@ -17,7 +18,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import PROJECT_ROOT, Settings, load_settings
+from .retry import with_retry
 from .video_providers import get_provider
+from .video_providers.base import VideoProvider
+
+logger = logging.getLogger(__name__)
 
 
 def _slugify(title: str) -> str:
@@ -79,8 +84,8 @@ def _composite_mascot_reactions(
     assets_dir = PROJECT_ROOT / mascot["assets_dir"]
     reaction_clip = assets_dir / "reaction.mp4"
     if not reaction_clip.exists():
-        print(f"[video_generator] mascot reaction clip not found at {reaction_clip}, skipping pop-ins "
-              "(run scripts/generate_mascot_assets.py)")
+        logger.warning(f"mascot reaction clip not found at {reaction_clip}, skipping pop-ins "
+                        "(run scripts/generate_mascot_assets.py)")
         return combined_path
 
     reaction_duration = mascot["clips"]["reaction"]["duration_seconds"]
@@ -133,8 +138,8 @@ def _add_bumpers(core_path: Path, work_dir: Path, settings: Settings) -> Path:
     assets_dir = PROJECT_ROOT / mascot["assets_dir"]
     bounce_in, bounce_out = assets_dir / "bounce_in.mp4", assets_dir / "bounce_out.mp4"
     if not bounce_in.exists() or not bounce_out.exists():
-        print(f"[video_generator] mascot bumper clips not found in {assets_dir}, skipping intro/outro "
-              "(run scripts/generate_mascot_assets.py)")
+        logger.warning(f"mascot bumper clips not found in {assets_dir}, skipping intro/outro "
+                        "(run scripts/generate_mascot_assets.py)")
         return core_path
 
     out_path = work_dir / "with_bumpers.mp4"
@@ -147,6 +152,15 @@ def _add_bumpers(core_path: Path, work_dir: Path, settings: Settings) -> Path:
         ]
     )
     return out_path
+
+
+@with_retry(attempts=3, base_delay=10.0, exceptions=(Exception,))
+def _generate_scene_clip(provider: VideoProvider, **kwargs) -> Path:
+    # Broad Exception on purpose: this is a pluggable interface to arbitrary
+    # third-party text-to-video vendors with wildly different failure modes
+    # (requests errors, timeouts, provider-specific RuntimeErrors, ...) --
+    # the goal is "don't die on a transient hiccup," not to distinguish them.
+    return provider.generate_scene_clip(**kwargs)
 
 
 def generate_video_for_concept(concept: dict, settings: Settings | None = None) -> Path:
@@ -162,11 +176,12 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
     work_dir = item_dir / "work"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[video_generator] generating '{concept['title']}' ({len(scenes)} scenes) via {vgcfg['provider']}")
+    logger.info(f"generating '{concept['title']}' ({len(scenes)} scenes) via {vgcfg['provider']}")
     clip_paths = []
     for i, scene in enumerate(scenes):
         clip_path = work_dir / f"scene_{i:02d}.mp4"
-        provider.generate_scene_clip(
+        _generate_scene_clip(
+            provider,
             prompt=scene["visual_prompt"],
             duration_seconds=scene_duration,
             resolution=vgcfg["resolution"],
@@ -199,7 +214,7 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
     music_track = _pick_music_track(settings)
     if music_track is None:
         captioned.replace(core_path)
-        print("[video_generator] no music track found in assets/music/, shipping without background music")
+        logger.info("no music track found in assets/music/, shipping without background music")
     else:
         _run_ffmpeg(
             [
@@ -231,16 +246,36 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
         "generated_at": timestamp,
     }
     (item_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
-    print(f"[video_generator] wrote {final_path}")
+    logger.info(f"wrote {final_path}")
     return final_path
 
 
 def generate_videos_from_concepts_file(concepts_path: Path, settings: Settings | None = None) -> list[Path]:
+    """Generates a video per concept. A failure on one concept (provider
+    outage, a bad prompt, whatever) is logged and skipped rather than
+    aborting the whole batch -- for an unattended run, three good videos and
+    one logged failure beats zero videos because #2 of 4 blew up."""
     settings = settings or load_settings()
     data = json.loads(concepts_path.read_text())
-    outputs = []
-    for concept in data["concepts"]:
-        outputs.append(generate_video_for_concept(concept, settings))
+    concepts = data["concepts"]
+
+    cap = settings.video_generation.get("max_videos_per_run")
+    if cap and len(concepts) > cap:
+        logger.info(f"capping this run at max_videos_per_run={cap} (ideation produced {len(concepts)} concepts)")
+        concepts = concepts[:cap]
+
+    outputs: list[Path] = []
+    failures: list[dict] = []
+    for concept in concepts:
+        try:
+            outputs.append(generate_video_for_concept(concept, settings))
+        except Exception as exc:
+            logger.error(f"failed to generate video for {concept.get('title', '<untitled>')!r}: {exc}")
+            failures.append({"title": concept.get("title"), "error": str(exc)})
+
+    logger.info(f"generated {len(outputs)}/{len(concepts)} videos" + (f", {len(failures)} failed" if failures else ""))
+    for f in failures:
+        logger.warning(f"  failed: {f['title']!r} -- {f['error']}")
     return outputs
 
 

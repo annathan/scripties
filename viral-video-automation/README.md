@@ -50,6 +50,45 @@ script any time you tweak the design in config.
 Design rationale, and — if the channel takes off — how to turn the AI
 design into real merch/stickers, is in `assets/mascot/DESIGN_BRIEF.md`.
 
+## Running this unattended
+
+The goal is a couple of uploads a week without babysitting a terminal. To
+that end:
+
+- **Retries.** Every external call (YouTube API, Claude, the video-gen
+  provider, upload chunks) retries with backoff on transient failures.
+  Non-transient ones (bad API key, quota exhausted) fail immediately
+  instead of wasting minutes retrying something that will never succeed.
+- **One bad concept doesn't kill the batch.** `generate` isolates each
+  concept — if one fails, it's logged and skipped, and the rest of the run
+  continues. Check the end-of-run summary for anything that needs a
+  second look.
+- **Ideation is validated, not trusted blindly.** The LLM's response is
+  parsed and schema-checked (right keys, right scene count); if it comes
+  back malformed, it's automatically re-asked (up to 3 attempts) rather
+  than writing garbage into the review queue.
+- **Duplicate-avoidance.** Recent titles are fed back into the ideation
+  prompt (`ideation.avoid_repeating_last_n_titles` in config) so repeated
+  runs don't quietly fill the queue with near-identical videos.
+- **Spend cap.** `video_generation.max_videos_per_run` hard-limits how many
+  videos one `generate` call will produce, independent of how many
+  concepts stage 2 came up with — a guardrail against an unexpectedly large
+  ideation batch turning into an unexpectedly large bill.
+- **Config is validated at load time** — a typo'd config.yaml fails fast
+  with a clear message instead of a confusing `KeyError` three stages in.
+- **Everything logs to `data/pipeline.log`** (in addition to the console),
+  so a scheduled/unattended run leaves a trail you can check after the
+  fact instead of needing to watch it happen.
+- **`review prune [days]`** deletes the video files (not the metadata) for
+  rejected items older than the given cutoff (default 14 days), so an
+  unattended cadence doesn't slowly fill the disk with stuff you already
+  said no to.
+
+This repo doesn't include the actual cron/scheduler wiring yet (e.g. a
+systemd timer, GitHub Actions schedule, or similar) — `python -m
+src.pipeline run` is safe to point at whatever scheduler you prefer since
+everything above already assumes it's running unattended.
+
 ## Pipeline
 
 ```
@@ -73,6 +112,7 @@ python -m src.pipeline run
 python -m src.pipeline review gallery   # open data/review_queue/index.html
 python -m src.pipeline review approve <slug>
 python -m src.pipeline upload <slug>
+python -m src.pipeline review prune     # delete old rejected videos, keep the metadata
 ```
 
 ## Setup
@@ -128,15 +168,17 @@ one-line change once you're confident.
 config/config.yaml           all the tunable pipeline settings, incl. mascot design
 src/
   trend_scanner.py           stage 1
-  ideation.py                stage 2
+  ideation.py                stage 2 (incl. JSON/schema validation + duplicate-avoidance)
   video_generator.py         stage 3 (scenes -> concat -> mascot composite -> captions -> bumpers -> music)
   video_providers/           stage 3 (pluggable text-to-video backends)
     base.py                  the interface
     mock.py                  keyless local placeholder (ffmpeg color+text)
     runway.py                real text-to-video example
-  review.py                  stage 4
+  review.py                  stage 4 (incl. prune for old rejected videos)
   uploader.py                stage 5
   pipeline.py                CLI entrypoint wiring it all together
+  retry.py                   shared exponential-backoff helper for external calls
+  logging_setup.py           shared console + data/pipeline.log logging config
 scripts/
   setup_youtube_oauth.py     one-time OAuth authorization for uploads
   generate_mascot_assets.py  renders the mascot's clip library (run once, or after a redesign)

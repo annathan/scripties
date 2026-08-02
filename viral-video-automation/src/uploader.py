@@ -8,16 +8,23 @@ it never reads straight from the review queue.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from .config import PROJECT_ROOT, Settings, load_settings
 
+logger = logging.getLogger(__name__)
+
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+_RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
+MAX_CHUNK_RETRIES = 5
 
 
 def _get_credentials(settings: Settings) -> Credentials:
@@ -71,12 +78,26 @@ def upload_video(slug: str, settings: Settings | None = None) -> str:
     media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True, mimetype="video/mp4")
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
-    print(f"[uploader] uploading '{metadata['title']}'...")
+    logger.info(f"uploading '{metadata['title']}'...")
     response = None
+    retries = 0
     while response is None:
-        status, response = request.next_chunk()
+        try:
+            status, response = request.next_chunk()
+        except HttpError as exc:
+            status_code = getattr(exc, "status_code", None) or getattr(exc.resp, "status", None)
+            if status_code not in _RETRYABLE_HTTP_STATUSES or retries >= MAX_CHUNK_RETRIES:
+                raise
+            retries += 1
+            delay = 5.0 * retries
+            logger.warning(
+                f"upload chunk failed (status {status_code}, retry {retries}/{MAX_CHUNK_RETRIES}): {exc}. "
+                f"Retrying in {delay:.0f}s..."
+            )
+            time.sleep(delay)
+            continue
         if status:
-            print(f"[uploader]   {int(status.progress() * 100)}%")
+            logger.info(f"  {int(status.progress() * 100)}%")
 
     video_id = response["id"]
     uploaded_dir = PROJECT_ROOT / settings.upload["uploaded_dir"]
@@ -86,7 +107,7 @@ def upload_video(slug: str, settings: Settings | None = None) -> str:
     metadata["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
     (uploaded_dir / f"{slug}.json").write_text(json.dumps(metadata, indent=2))
 
-    print(f"[uploader] done: {metadata['youtube_url']}")
+    logger.info(f"done: {metadata['youtube_url']}")
     return video_id
 
 

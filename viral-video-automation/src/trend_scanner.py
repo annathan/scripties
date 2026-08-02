@@ -13,6 +13,8 @@ stage 2 uses as inspiration, never a specific video to copy.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +23,33 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from .config import Settings, load_settings
+
+logger = logging.getLogger(__name__)
+
+_RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
+
+
+def _execute_with_retry(request, attempts: int = 3):
+    """Runs a googleapiclient request, retrying with backoff only on
+    transient failures (rate limit / server errors). A quota-exceeded or
+    auth error will fail on every retry and every subsequent query too, so
+    it's raised immediately instead of wasting minutes retrying a call
+    that's never going to succeed."""
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return request.execute()
+        except HttpError as exc:
+            status = getattr(exc, "status_code", None) or getattr(exc.resp, "status", None)
+            if status not in _RETRYABLE_HTTP_STATUSES:
+                raise
+            last_exc = exc
+            if attempt == attempts:
+                break
+            delay = 5.0 * attempt
+            logger.warning(f"YouTube API call failed (status {status}, attempt {attempt}/{attempts}): {exc}. Retrying in {delay:.0f}s...")
+            time.sleep(delay)
+    raise last_exc
 
 
 @dataclass
@@ -61,9 +90,8 @@ def scan_query(youtube, query: str, settings: Settings) -> list[VideoSignal]:
         datetime.now(timezone.utc) - timedelta(days=cfg["published_within_days"])
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    search_resp = (
-        youtube.search()
-        .list(
+    search_resp = _execute_with_retry(
+        youtube.search().list(
             q=query,
             part="id",
             type="video",
@@ -72,16 +100,13 @@ def scan_query(youtube, query: str, settings: Settings) -> list[VideoSignal]:
             maxResults=min(cfg["max_results_per_query"], 50),
             safeSearch="strict",
         )
-        .execute()
     )
     video_ids = [item["id"]["videoId"] for item in search_resp.get("items", [])]
     if not video_ids:
         return []
 
-    videos_resp = (
-        youtube.videos()
-        .list(part="snippet,statistics,contentDetails,status", id=",".join(video_ids))
-        .execute()
+    videos_resp = _execute_with_retry(
+        youtube.videos().list(part="snippet,statistics,contentDetails,status", id=",".join(video_ids))
     )
 
     signals = []
@@ -134,20 +159,29 @@ def run_trend_scan(settings: Settings | None = None) -> Path:
 
     youtube = build("youtube", "v3", developerKey=settings.youtube_api_key)
 
+    queries = settings.trend_scanner["search_queries"]
     report: dict[str, list[dict]] = {}
-    for query in settings.trend_scanner["search_queries"]:
+    failed_queries: list[str] = []
+    for query in queries:
         try:
             signals = scan_query(youtube, query, settings)
         except HttpError as e:
-            print(f"[trend_scanner] query {query!r} failed: {e}")
+            logger.error(f"query {query!r} failed: {e}")
+            failed_queries.append(query)
             continue
         report[query] = [asdict(s) for s in signals]
-        print(f"[trend_scanner] {query!r}: {len(signals)} qualifying videos")
+        logger.info(f"{query!r}: {len(signals)} qualifying videos")
+
+    if failed_queries and len(failed_queries) == len(queries):
+        raise RuntimeError(
+            f"all {len(failed_queries)} trend-scanner queries failed against the YouTube API -- "
+            "check YOUTUBE_API_KEY and quota. See the error(s) logged above for details."
+        )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = settings.path(f"data/trends/trend_report_{timestamp}.json")
     out_path.write_text(json.dumps({"generated_at": timestamp, "niche": settings.niche, "results": report}, indent=2))
-    print(f"[trend_scanner] wrote {out_path}")
+    logger.info(f"wrote {out_path}")
     return out_path
 
 
