@@ -1,0 +1,23 @@
+# secrets -- never commit
+.env
+youtube_client_secret.json
+youtube_token.json
+
+# generated data (trend reports, concepts, generated videos) -- regenerate, don't commit
+data/trends/*
+data/concepts/*
+data/review_queue/*
+data/approved/*
+data/uploaded/*
+!data/**/.gitkeep
+
+# music you add locally (licensing varies per file, don't assume it's OK to commit)
+assets/music/*
+!assets/music/.gitkeep
+!assets/music/README.md
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/

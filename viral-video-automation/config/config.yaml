@@ -1,0 +1,65 @@
+# Pipeline configuration. Edit this to steer what gets scanned, generated,
+# and how strict the compliance/quality gates are.
+
+niche: kids_content
+
+# --- Stage 1: trend scanner ---
+trend_scanner:
+  # Search terms used against the YouTube Data API to find currently-performing
+  # videos in the niche. Keep these broad-but-relevant; the scorer below ranks
+  # results, it doesn't just take everything.
+  search_queries:
+    - "nursery rhymes for toddlers"
+    - "kids animated story"
+    - "learning colors for kids"
+    - "counting song for toddlers"
+    - "bedtime story animation"
+  # Only consider channels/videos explicitly marked for kids by YouTube
+  # (safer for legal/compliance signal and closer to what we intend to publish).
+  restrict_to_made_for_kids: true
+  # Only look at videos published in the last N days, so "viral" means
+  # "currently working", not "viral in 2016".
+  published_within_days: 21
+  max_results_per_query: 25
+  # Minimum view velocity (views / day since published) to be worth surfacing.
+  min_view_velocity: 2000
+
+# --- Stage 2: ideation (LLM) ---
+ideation:
+  model: claude-sonnet-5
+  concepts_per_run: 5
+  # Style/safety guardrails injected into every ideation prompt. These exist
+  # to keep output as ORIGINAL animated content inspired by trend patterns
+  # (topics, pacing, structure) rather than reproductions of any specific
+  # video, and to keep it clearly cartoon/animated rather than photoreal
+  # depictions of real-looking children.
+  style_guardrails:
+    - "Output must be a wholly original story, characters, and script — never reuse another creator's title, character names, or specific plot."
+    - "Visual style must be stylized/cartoon animation, never photorealistic renderings of human children."
+    - "No real people, brands, or copyrighted characters."
+    - "Content must be non-violent, non-scary, and age-appropriate for under-8s."
+    - "No dialogue or imagery implying the video was made by a real on-screen host or creator."
+
+# --- Stage 3: video generation ---
+video_generation:
+  provider: mock # overridden by VIDEO_PROVIDER env var if set
+  target_duration_seconds: 60
+  scenes_per_video: 6
+  resolution: "1080x1920" # vertical, works for Shorts + regular uploads
+  music:
+    dir: assets/music
+    license_notes: "Only place music here that you have a license to use commercially (royalty-free library with a commercial/YouTube license, or fully AI-generated/owned). See assets/music/README.md."
+
+# --- Stage 4: human review ---
+review:
+  queue_dir: data/review_queue
+  approved_dir: data/approved
+  # Nothing in review/ ever auto-progresses to upload; approve_video() must
+  # be called explicitly (via the CLI) for each item.
+
+# --- Stage 5: upload ---
+upload:
+  privacy_status: private # private | unlisted | public — start private, promote manually until you trust the pipeline
+  made_for_kids: true
+  category_id: "1" # Film & Animation; change per Google's category list if needed
+  uploaded_dir: data/uploaded
