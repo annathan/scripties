@@ -70,6 +70,12 @@ class Settings:
         return os.environ.get("RUNWAY_API_KEY") or None
 
     @property
+    def fal_api_key(self) -> str | None:
+        # Pika's API is served through fal.ai; FAL_KEY matches fal's own
+        # SDK/CLI convention so any snippets copied from their docs work as-is.
+        return os.environ.get("FAL_KEY") or None
+
+    @property
     def youtube_client_secret_file(self) -> Path:
         return PROJECT_ROOT / os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "youtube_client_secret.json")
 

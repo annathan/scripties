@@ -146,7 +146,7 @@ clips to composite in.
 |---|---|---|
 | 1. scan | `YOUTUBE_API_KEY` | Google Cloud Console → enable "YouTube Data API v3" → Credentials → API key. Read-only, no OAuth. |
 | 2. ideate | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
-| 3. generate | `RUNWAY_API_KEY` (or swap provider) | Only needed once you set `VIDEO_PROVIDER=runway`. See `src/video_providers/` to plug in a different vendor (Kling, Pika, Luma, Sora, ...) — they all follow roughly the same submit/poll/download shape. |
+| 3. generate | `RUNWAY_API_KEY` or `FAL_KEY` | Set `VIDEO_PROVIDER=runway` or `VIDEO_PROVIDER=pika`. Pika's API is served through [fal.ai](https://fal.ai) (a `FAL_KEY`, not a separate Pika key). See `src/video_providers/` to plug in a different vendor (Kling, Luma, Sora, ...) — they all follow roughly the same submit/poll/download shape. |
 | 5. upload | OAuth client + token | Run `python scripts/setup_youtube_oauth.py` once (see that script's docstring for the one-time Cloud Console setup). |
 
 ## Configuration
@@ -174,6 +174,7 @@ src/
     base.py                  the interface
     mock.py                  keyless local placeholder (ffmpeg color+text)
     runway.py                real text-to-video example
+    pika.py                  real text-to-video example (via fal.ai)
   review.py                  stage 4 (incl. prune for old rejected videos)
   uploader.py                stage 5
   pipeline.py                CLI entrypoint wiring it all together
@@ -192,6 +193,16 @@ data/                         all generated output (gitignored except folder str
 
 Implement `VideoProvider.generate_scene_clip()` in a new file under
 `src/video_providers/`, register it in `src/video_providers/__init__.py`'s
-`get_provider()`, and point `VIDEO_PROVIDER` at it. `runway.py` is a
-working template for the general "submit prompt → poll job → download
-clip" shape most vendors use.
+`get_provider()`, and point `VIDEO_PROVIDER` at it. `runway.py` and
+`pika.py` are working templates for the general "submit prompt → poll job
+→ download clip" shape most vendors use.
+
+**A note on `pika.py` specifically:** it was written against fal.ai's
+documented model catalog (Pika's official API access goes through fal.ai,
+not a separate Pika-branded API), but doc-site fetches were blocked while
+building it, so the exact model id and field names weren't verified
+against a live page. Before spending real money on it: log into
+[fal.ai](https://fal.ai), open the current Pika text-to-video model page,
+and check its "API" tab's auto-generated code sample (generated against
+your own key, so it's always current) against what's in `pika.py` —
+adjust the model id/field names if fal's catalog has moved on.
