@@ -184,15 +184,30 @@ def generate_concepts(trend_report_path: Path, settings: Settings | None = None)
     last_error: Exception | None = None
     concepts_raw: list[dict] | None = None
 
+    max_tokens = cfg.get("max_tokens", 8192)
     for attempt in range(1, MAX_IDEATION_ATTEMPTS + 1):
         response = _create_message(
             client,
             model=cfg["model"],
-            max_tokens=4096,
+            max_tokens=max_tokens,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
         text = "".join(block.text for block in response.content if block.type == "text")
+
+        if response.stop_reason == "max_tokens":
+            last_error = ValueError(
+                f"response was truncated (hit max_tokens={max_tokens} before finishing) -- this is a token "
+                "budget problem, not a formatting one. Raise ideation.max_tokens in config.yaml, or lower "
+                "concepts_per_run/scenes_per_video, if this keeps happening."
+            )
+            logger.warning(f"ideation response truncated at max_tokens (attempt {attempt}/{MAX_IDEATION_ATTEMPTS})")
+            user_message += (
+                "\n\nYour previous response was cut off before it finished (ran out of output budget) -- "
+                f"generate fewer/shorter concepts if needed so the full JSON array fits within {max_tokens} tokens."
+            )
+            continue
+
         try:
             concepts_raw = _parse_and_validate(text, scenes_per_video)
             break
