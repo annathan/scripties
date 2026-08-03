@@ -197,12 +197,16 @@ Implement `VideoProvider.generate_scene_clip()` in a new file under
 `pika.py` are working templates for the general "submit prompt → poll job
 → download clip" shape most vendors use.
 
-**A note on `pika.py` specifically:** it was written against fal.ai's
-documented model catalog (Pika's official API access goes through fal.ai,
-not a separate Pika-branded API), but doc-site fetches were blocked while
-building it, so the exact model id and field names weren't verified
-against a live page. Before spending real money on it: log into
-[fal.ai](https://fal.ai), open the current Pika text-to-video model page,
-and check its "API" tab's auto-generated code sample (generated against
-your own key, so it's always current) against what's in `pika.py` —
-adjust the model id/field names if fal's catalog has moved on.
+**A note on `pika.py` specifically:** Pika's official API access goes
+through fal.ai (a `FAL_KEY`, not a separate Pika-branded API) — confirmed
+against fal's schema for `fal-ai/pika/v2.2/text-to-video`. One constraint
+worth knowing: fal's `duration` field is an enum of exactly **5 or 10
+seconds**, not a free-form number, so `pika.py` rounds whatever
+`scene_duration` the pipeline asks for to the nearest allowed value —
+the clip Pika actually renders can therefore be shorter/longer than
+requested. `video_generator.py` accounts for this by measuring each
+clip's real duration (`ffprobe`) after generation and building captions
+and mascot-transition timing from that, rather than trusting the request
+— so this is safe to use even if your scene length doesn't land neatly on
+5 or 10 seconds, but the video's actual total runtime may end up shorter
+or longer than `target_duration_seconds` as a result.
