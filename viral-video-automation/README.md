@@ -117,6 +117,7 @@ python -m src.pipeline review prune     # delete old rejected videos, keep the m
 
 ## Setup
 
+**macOS / Linux:**
 ```bash
 cd viral-video-automation
 python3 -m venv .venv && source .venv/bin/activate
@@ -124,9 +125,23 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+**Windows (cmd.exe):**
+```
+cd viral-video-automation
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+**Windows (PowerShell):** same as above, but `.venv\Scripts\Activate.ps1`
+and `Copy-Item .env.example .env`.
+
 Install [ffmpeg](https://ffmpeg.org/) and make sure it's on `PATH` — every
 stage-3 provider (including the keyless mock one) shells out to it for
-concatenation, captions, and music mixing.
+concatenation, captions, and music mixing. On Windows: `winget install
+ffmpeg` (or Chocolatey's `choco install ffmpeg`), then open a new terminal
+so `PATH` picks it up. Confirm with `ffmpeg -version` on any platform.
 
 ### Try it with zero API keys first
 
