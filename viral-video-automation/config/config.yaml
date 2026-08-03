@@ -32,6 +32,14 @@ ideation:
   # repeating (reduces near-duplicate concepts showing up in the review
   # queue run after run). 0 disables the check.
   avoid_repeating_last_n_titles: 30
+  # Output budget for the ideation response. concepts_per_run full concepts
+  # (each with scenes_per_video scenes, each scene carrying a "detailed"
+  # visual_prompt) adds up fast -- 4096 truncates mid-response well before
+  # 5 concepts x 6 scenes finishes, which shows up as a JSON parse error
+  # ("Unterminated string...") rather than an obviously-token-related one.
+  # If you raise concepts_per_run or scenes_per_video and start seeing that
+  # error again, raise this too.
+  max_tokens: 8192
   # Style/safety guardrails injected into every ideation prompt. These exist
   # to keep output as ORIGINAL animated content inspired by trend patterns
   # (topics, pacing, structure) rather than reproductions of any specific
