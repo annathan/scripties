@@ -38,11 +38,13 @@ def _srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
 
 
-def _build_srt(scenes: list[dict], scene_duration: float, out_path: Path) -> Path:
+def _build_srt(scenes: list[dict], scene_durations: list[float], out_path: Path) -> Path:
     lines = []
+    t = 0.0
     for i, scene in enumerate(scenes):
-        start, end = i * scene_duration, (i + 1) * scene_duration
+        start, end = t, t + scene_durations[i]
         lines += [str(i + 1), f"{_srt_timestamp(start)} --> {_srt_timestamp(end)}", scene["narration"], ""]
+        t = end
     out_path.write_text("\n".join(lines))
     return out_path
 
@@ -51,6 +53,19 @@ def _run_ffmpeg(args: list[str], cwd: Path | None = None) -> None:
     result = subprocess.run(["ffmpeg", "-y", *args], capture_output=True, text=True, cwd=cwd)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr[-4000:]}")
+
+
+def _probe_duration(path: Path) -> float:
+    """Actual clip duration, not the one we asked the provider for. Some
+    providers only support fixed-length outputs (e.g. Pika's 5s/10s enum),
+    so the requested and rendered durations can differ -- captions and
+    mascot-transition timing need to match reality, not the request."""
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True,
+        text=True,
+    )
+    return float(result.stdout.strip())
 
 
 def _pick_music_track(settings: Settings) -> Path | None:
@@ -70,15 +85,17 @@ _REACTION_POSITIONS = {
 
 
 def _composite_mascot_reactions(
-    combined_path: Path, work_dir: Path, settings: Settings, num_scenes: int, scene_duration: float
+    combined_path: Path, work_dir: Path, settings: Settings, scene_durations: list[float]
 ) -> Path:
     """Overlays the mascot's pre-rendered 'reaction' clip (chroma-keyed) at
     each scene transition, in a corner, on top of the ongoing scene content.
-    Falls back to returning combined_path unchanged if the mascot is
-    disabled, there's only one scene (no transitions), or the asset hasn't
-    been generated yet."""
+    Transition points are the actual (ffprobe-measured) scene boundaries,
+    not the theoretical ones -- a provider that doesn't honor the requested
+    duration exactly shouldn't desync the pop-in. Falls back to returning
+    combined_path unchanged if the mascot is disabled, there's only one
+    scene (no transitions), or the asset hasn't been generated yet."""
     mascot = settings.mascot
-    if not mascot.get("enabled") or num_scenes < 2:
+    if not mascot.get("enabled") or len(scene_durations) < 2:
         return combined_path
 
     assets_dir = PROJECT_ROOT / mascot["assets_dir"]
@@ -95,14 +112,19 @@ def _composite_mascot_reactions(
         v.format(m=margin) for v in _REACTION_POSITIONS[mascot.get("reaction_position", "top_right")]
     )
 
-    num_transitions = num_scenes - 1
+    boundaries = []
+    cumulative = 0.0
+    for d in scene_durations[:-1]:
+        cumulative += d
+        boundaries.append(cumulative)
+
     inputs = ["-i", str(combined_path)]
-    for _ in range(num_transitions):
+    for _ in boundaries:
         inputs += ["-i", str(reaction_clip)]
 
     filter_parts = []
     labels = []
-    for i in range(num_transitions):
+    for i in range(len(boundaries)):
         label = f"r{i}"
         filter_parts.append(
             f"[{i + 1}:v]scale=iw*{size_frac}:-1,colorkey={mascot['chroma_key_color']}:0.3:0.1[{label}]"
@@ -111,7 +133,7 @@ def _composite_mascot_reactions(
 
     current = "0:v"
     for i, label in enumerate(labels):
-        t_start = (i + 1) * scene_duration - reaction_duration / 2
+        t_start = boundaries[i] - reaction_duration / 2
         t_end = t_start + reaction_duration
         out_label = f"v{i}"
         filter_parts.append(
@@ -189,15 +211,21 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
         )
         clip_paths.append(clip_path)
 
+    # Measure what was actually rendered rather than trusting the requested
+    # duration -- some providers only support fixed-length clips (e.g.
+    # Pika's 5s/10s enum) and will silently round, which would otherwise
+    # desync captions and mascot pop-ins from the real scene boundaries.
+    scene_durations = [_probe_duration(p) for p in clip_paths]
+
     concat_list = work_dir / "concat_list.txt"
     concat_list.write_text("\n".join(f"file '{p.name}'" for p in clip_paths))
     combined = work_dir / "combined.mp4"
     _run_ffmpeg(["-f", "concat", "-safe", "0", "-i", "concat_list.txt", "-c", "copy", "combined.mp4"], cwd=work_dir)
 
-    with_mascot = _composite_mascot_reactions(combined, work_dir, settings, len(scenes), scene_duration)
+    with_mascot = _composite_mascot_reactions(combined, work_dir, settings, scene_durations)
 
     srt_path = work_dir / "captions.srt"
-    _build_srt(scenes, scene_duration, srt_path)
+    _build_srt(scenes, scene_durations, srt_path)
     captioned = work_dir / "captioned.mp4"
     _run_ffmpeg(
         [

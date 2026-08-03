@@ -47,7 +47,7 @@ ideation:
 
 # --- Stage 3: video generation ---
 video_generation:
-  provider: mock # overridden by VIDEO_PROVIDER env var if set
+  provider: mock # mock | runway | pika -- overridden by VIDEO_PROVIDER env var if set
   target_duration_seconds: 60
   scenes_per_video: 6
   resolution: "1080x1920" # vertical, works for Shorts + regular uploads
