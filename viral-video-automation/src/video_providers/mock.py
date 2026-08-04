@@ -9,13 +9,6 @@ from ..fonts import ffmpeg_escape_path, find_font
 from .base import VideoProvider
 
 
-def _escape_drawtext(text: str) -> str:
-    # ffmpeg drawtext needs these escaped or the filter graph parse breaks.
-    for char in ("\\", ":", "'", "%"):
-        text = text.replace(char, "\\" + char)
-    return text
-
-
 class MockVideoProvider(VideoProvider):
     """Keyless, local placeholder provider.
 
@@ -42,7 +35,19 @@ class MockVideoProvider(VideoProvider):
             color = "0x" + hashlib.md5(prompt.encode()).hexdigest()[:6]
 
         wrapped = "\n".join(textwrap.wrap(prompt, width=28)[:6])
-        text = _escape_drawtext(wrapped)
+
+        # Scene prompts come straight from the LLM and can contain any
+        # punctuation -- commas, colons, quotes, backslashes -- in any
+        # combination. Escaping those correctly for an inline text='...'
+        # value is exactly the kind of thing that looks right in testing
+        # and then breaks on some real prompt (ffmpeg's filtergraph parser
+        # ends up reading a stray comma as a filter separator and choking
+        # on whatever text comes after it as an unknown filter name).
+        # textfile= sidesteps the whole problem: the file's contents are
+        # used as literal text, no filtergraph escaping of the text itself
+        # needed at all -- only the *path* to the file still needs escaping.
+        text_path = out_path.with_suffix(".txt")
+        text_path.write_text(wrapped, encoding="utf-8")
 
         # Explicit fontfile= bypasses fontconfig's default-font lookup,
         # which crashes ("Cannot load default config file") on plenty of
@@ -51,7 +56,7 @@ class MockVideoProvider(VideoProvider):
         font_clause = f"fontfile='{ffmpeg_escape_path(found[0])}':" if found else ""
 
         drawtext = (
-            f"drawtext={font_clause}text='{text}':fontcolor=white:fontsize=32:"
+            f"drawtext={font_clause}textfile='{ffmpeg_escape_path(text_path)}':fontcolor=white:fontsize=32:"
             "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5:boxborderw=16"
         )
         cmd = [

@@ -67,6 +67,41 @@ video_generation:
     dir: assets/music
     license_notes: "Only place music here that you have a license to use commercially (royalty-free library with a commercial/YouTube license, or fully AI-generated/owned). See assets/music/README.md."
 
+# Spoken narration (text-to-speech). Each scene's narration line is voiced
+# and mixed into that scene's audio, fitted to the scene's actual rendered
+# duration (trimmed if the narration runs long, padded with silence if it
+# runs short -- see video_generator.py). This produces SPOKEN narration,
+# not singing -- concepts titled as "songs" will still just be spoken
+# aloud, not sung.
+narration:
+  enabled: true
+  provider: mock # mock | elevenlabs -- overridden by TTS_PROVIDER env var if set
+  # ElevenLabs voice ID. This default ("George", from ElevenLabs' own docs
+  # example) is just a placeholder -- browse
+  # https://elevenlabs.io/app/voice-library and swap in a voice that
+  # actually suits warm children's narration.
+  voice_id: "JBFqnCBsd6RMkjVDRZzb"
+  model_id: "eleven_v3"
+  # Background music is ducked lower than its no-narration default (0.25)
+  # so it doesn't compete with spoken narration for clarity.
+  music_volume_when_narration: 0.15
+
+# Sung songs, for concepts ideation tags format: "song" (as opposed to
+# format: "narration", spoken -- see ideation.py). Unlike narration (voiced
+# per-scene, fitted to each scene's own duration), a song is ONE
+# continuous track composed for the whole video via ElevenLabs Music, from
+# a style prompt plus the concept's scene narration lines used as lyrics.
+# It already includes music, so song-format videos skip the separate
+# background-music mixing narration-format videos use.
+song:
+  enabled: true
+  provider: mock # mock | elevenlabs -- overridden by SONG_PROVIDER env var if set; reuses ELEVENLABS_API_KEY (same account, different product)
+  model_id: "music_v2"
+  style_prompt: >
+    A cheerful, warm children's song with a simple, friendly, gentle
+    melody suitable for toddlers -- age-appropriate instrumentation,
+    not too loud or intense.
+
 # Recurring channel mascot. Appears as a standalone bumper at the very start
 # and end of each video, plus a brief corner pop-in between scenes -- it's a
 # signature, not the star: scene content (video_generation above) is theme-

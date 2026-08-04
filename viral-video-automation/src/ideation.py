@@ -41,8 +41,15 @@ Hard rules (non-negotiable):
 For each concept produce:
 - title: a catchy, original YouTube title (not copied from any example)
 - premise: one sentence describing the story/idea
+- format: either "song" (a nursery rhyme, counting song, silly song, or \
+  anything meant to be SUNG) or "narration" (a narrated story or \
+  informational video meant to be SPOKEN). Pick whichever this concept \
+  naturally is — don't force every concept into one or the other.
 - scenes: a list of exactly {scenes_per_video} scenes, each with:
-    - narration: the line(s) spoken/sung during this scene (simple, warm, age-appropriate)
+    - narration: for format "song", write this as actual singable lyrics \
+      (simple rhythm and rhyme) for this scene's portion of the song; for \
+      format "narration", write it as spoken narration (simple, warm, \
+      age-appropriate). Either way this doubles as the on-screen caption.
     - visual_prompt: a detailed text-to-video prompt describing the scene \
       (characters, setting, action, animation style — always stylized/cartoon, \
       never photoreal humans)
@@ -52,7 +59,8 @@ For each concept produce:
 Respond with ONLY a JSON array of concept objects — no prose, no markdown code fences, before or after.
 """
 
-REQUIRED_CONCEPT_KEYS = ("title", "premise", "scenes", "description", "tags")
+REQUIRED_CONCEPT_KEYS = ("title", "premise", "format", "scenes", "description", "tags")
+VALID_FORMATS = ("song", "narration")
 REQUIRED_SCENE_KEYS = ("narration", "visual_prompt")
 MAX_IDEATION_ATTEMPTS = 3
 
@@ -61,6 +69,7 @@ MAX_IDEATION_ATTEMPTS = 3
 class Concept:
     title: str
     premise: str
+    format: str
     scenes: list[dict]
     description: str
     tags: list[str]
@@ -124,6 +133,8 @@ def _parse_and_validate(text: str, expected_scene_count: int) -> list[dict]:
         missing = [k for k in REQUIRED_CONCEPT_KEYS if k not in concept]
         if missing:
             raise ValueError(f"concept {concept.get('title', '<untitled>')!r} missing key(s): {missing}")
+        if concept["format"] not in VALID_FORMATS:
+            raise ValueError(f"concept {concept['title']!r} has invalid format {concept['format']!r}, expected one of {VALID_FORMATS}")
         if len(concept["scenes"]) != expected_scene_count:
             raise ValueError(
                 f"concept {concept['title']!r} has {len(concept['scenes'])} scenes, expected {expected_scene_count}"
