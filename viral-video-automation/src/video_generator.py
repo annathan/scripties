@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import PROJECT_ROOT, Settings, load_settings
+from .fonts import ffmpeg_escape_path, find_font
 from .retry import with_retry
 from .video_providers import get_provider
 from .video_providers.base import VideoProvider
@@ -227,10 +228,20 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
     srt_path = work_dir / "captions.srt"
     _build_srt(scenes, scene_durations, srt_path)
     captioned = work_dir / "captioned.mp4"
+
+    # As in mock.py: an explicit font avoids libass falling back to
+    # fontconfig's default-font lookup, which crashes on plenty of Windows
+    # ffmpeg builds. fontsdir points libass at a folder to load fonts from
+    # directly; FontName is set to match whatever font that folder actually
+    # has, rather than assuming "Arial" exists on this machine.
+    found_font = find_font()
+    fontsdir_clause = f"fontsdir='{ffmpeg_escape_path(found_font[0].parent)}':" if found_font else ""
+    font_name = found_font[1] if found_font else "Arial"
+
     _run_ffmpeg(
         [
             "-i", str(with_mascot),
-            "-vf", "subtitles=captions.srt:force_style='FontName=Arial,FontSize=18,"
+            "-vf", f"subtitles=captions.srt:{fontsdir_clause}force_style='FontName={font_name},FontSize=18,"
             "PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3'",
             "-c:a", "copy",
             "captioned.mp4",
