@@ -22,6 +22,7 @@ from pathlib import Path
 from .config import PROJECT_ROOT, Settings, load_settings
 from .fonts import ffmpeg_escape_path, find_font
 from .retry import with_retry
+from .song_providers import get_song_provider
 from .tts_providers import get_tts_provider
 from .video_providers import get_provider
 from .video_providers.base import VideoProvider
@@ -87,6 +88,13 @@ def _synthesize_narration(provider, text: str, out_path: Path) -> Path:
     return provider.synthesize(text, out_path)
 
 
+# mp3 encoding works in fixed-size frames, so a clip's real duration almost
+# never lands exactly on a requested cut point -- a ~30ms overshoot is
+# normal encoder behavior, not audio that actually needs trimming. Only
+# warn/trim past this tolerance so logs stay meaningful.
+_DURATION_FIT_TOLERANCE_SECONDS = 0.5
+
+
 def _build_narration_track(
     scenes: list[dict], scene_durations: list[float], work_dir: Path, settings: Settings
 ) -> Path | None:
@@ -106,7 +114,7 @@ def _build_narration_track(
         actual = _probe_duration(raw_path)
 
         fitted_path = work_dir / f"narration_fit_{i:02d}.mp3"
-        if actual > duration:
+        if actual > duration + _DURATION_FIT_TOLERANCE_SECONDS:
             logger.warning(
                 f"scene {i} narration ({actual:.1f}s) is longer than its video clip ({duration:.1f}s) -- "
                 "trimming to fit. Consider shorter narration lines, or fewer scenes_per_video / a longer "
@@ -126,6 +134,41 @@ def _build_narration_track(
         [*inputs, "-filter_complex", f"{concat_pads}concat=n={len(fitted_paths)}:v=0:a=1[aout]", "-map", "[aout]", str(narration_track)]
     )
     return narration_track
+
+
+@with_retry(attempts=3, base_delay=10.0, exceptions=(Exception,))
+def _compose_song(provider, prompt: str, duration_seconds: float, out_path: Path) -> Path:
+    # Broad Exception for the same reason as the other provider-call wrappers.
+    return provider.compose(prompt, duration_seconds, out_path)
+
+
+def _build_song_track(scenes: list[dict], total_duration: float, work_dir: Path, settings: Settings) -> Path | None:
+    """Composes ONE continuous song for the whole video (not per-scene),
+    using the concatenated scene narration lines as lyrics, then fits it to
+    the video's actual total duration (trim if long, pad with silence if
+    short) -- same fitting approach as narration, just for a single track
+    instead of N. Returns None if song generation is disabled."""
+    song_cfg = settings.song
+    if not song_cfg.get("enabled"):
+        return None
+
+    provider = get_song_provider(settings)
+    lyrics = "\n".join(scene["narration"] for scene in scenes)
+    prompt = f"{song_cfg['style_prompt'].strip()}\n\nSing these lyrics:\n{lyrics}"
+
+    raw_path = work_dir / "song_raw.mp3"
+    _compose_song(provider, prompt, total_duration, raw_path)
+    actual = _probe_duration(raw_path)
+
+    fitted_path = work_dir / "song_fit.mp3"
+    if actual > total_duration + _DURATION_FIT_TOLERANCE_SECONDS:
+        logger.warning(
+            f"composed song ({actual:.1f}s) is longer than the video ({total_duration:.1f}s) -- trimming to fit."
+        )
+        _run_ffmpeg(["-i", str(raw_path), "-t", f"{total_duration:.3f}", str(fitted_path)])
+    else:
+        _run_ffmpeg(["-i", str(raw_path), "-af", f"apad=whole_dur={total_duration:.3f}", str(fitted_path)])
+    return fitted_path
 
 
 def _mix_audio(
@@ -336,15 +379,25 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
         cwd=work_dir,
     )
 
-    narration_track = _build_narration_track(scenes, scene_durations, work_dir, settings)
-    music_track = _pick_music_track(settings)
-    if music_track is None and narration_track is None:
-        logger.info("no narration or music track -- shipping the video's own (likely silent) audio")
+    # "song" concepts get one continuous composed track (vocals + music
+    # already combined) instead of per-scene narration, and skip the
+    # separate background-music track since the song already includes one.
+    concept_format = concept.get("format", "narration")
+    if concept_format == "song" and settings.song.get("enabled"):
+        vocal_track = _build_song_track(scenes, sum(scene_durations), work_dir, settings)
+        music_track = None
+        logger.info("format=song -- composing one continuous track instead of per-scene narration")
+    else:
+        vocal_track = _build_narration_track(scenes, scene_durations, work_dir, settings)
+        music_track = _pick_music_track(settings)
+
+    if music_track is None and vocal_track is None:
+        logger.info("no narration/song or music track -- shipping the video's own (likely silent) audio")
     elif music_track is None:
-        logger.info("no music track found in assets/music/, narration only")
+        logger.info("no music track found in assets/music/, narration/song only")
 
     core_path = work_dir / "core.mp4"
-    _mix_audio(captioned, narration_track, music_track, settings.narration, core_path)
+    _mix_audio(captioned, vocal_track, music_track, settings.narration, core_path)
 
     final_path = item_dir / "final.mp4"
     _add_bumpers(core_path, work_dir, settings).replace(final_path)
@@ -352,6 +405,7 @@ def generate_video_for_concept(concept: dict, settings: Settings | None = None) 
     metadata = {
         "slug": slug,
         "title": concept["title"],
+        "format": concept_format,
         "premise": concept.get("premise", ""),
         "description": concept.get("description", ""),
         "tags": concept.get("tags", []),

@@ -50,33 +50,43 @@ script any time you tweak the design in config.
 Design rationale, and — if the channel takes off — how to turn the AI
 design into real merch/stickers, is in `assets/mascot/DESIGN_BRIEF.md`.
 
-## Narration (text-to-speech)
+## Narration and songs (audio)
 
-Every scene's `narration` line gets voiced (`config.yaml` → `narration:`)
-and mixed into that scene's audio — this is what makes captions readable
-*and* audible, since text-to-video providers don't generate narration
-matched to your script on their own. Narration is **spoken**, not sung —
-a concept titled "A Silly Sorry Song" gets a spoken narration reading of
-its lines, not an actual song. Real singing would need a different kind
-of tool (e.g. Suno/Udio-style music generation) and isn't wired in.
+Stage 2 tags every concept with a `format`: `"song"` (nursery rhyme,
+counting song, anything meant to be sung) or `"narration"` (a narrated
+story/informational video, meant to be spoken). Stage 3 branches on it:
 
-Each line is fitted to its scene's *actual* rendered duration (the same
-ffprobe-measured value captions and mascot timing use): trimmed if it
-runs long, padded with silence if it runs short. If you see "narration is
-longer than its video clip" warnings often, either shorten your narration
-style or give scenes more room (`target_duration_seconds` /
-`scenes_per_video`). Background music gets ducked
-(`music_volume_when_narration`) so it doesn't compete with narration.
+- **`narration`** — each scene's `narration` line is voiced individually
+  (`config.yaml` → `narration:`) and fitted to that *scene's* actual
+  rendered duration (the same ffprobe-measured value captions and mascot
+  timing use): trimmed if it runs long, padded with silence if short. If
+  you see "narration is longer than its video clip" warnings often,
+  either shorten your narration style or give scenes more room
+  (`target_duration_seconds` / `scenes_per_video`). Background music gets
+  ducked (`music_volume_when_narration`) so it doesn't compete with it.
+- **`song`** — ONE continuous track is composed for the *whole video*
+  (`config.yaml` → `song:`), using every scene's narration lines
+  concatenated as lyrics plus a style prompt. It's fitted to the video's
+  actual total duration the same way (trim/pad), and already includes
+  music, so song-format videos skip the separate background-music mixing
+  narration-format videos use.
 
-Default provider is ElevenLabs, via `TTS_PROVIDER=elevenlabs` +
-`ELEVENLABS_API_KEY` — pick an actual voice from
+Either way, this is what makes captions readable *and* audible — text-to-video
+providers don't generate narration or song matched to your script on their
+own.
+
+Both use ElevenLabs by default: `TTS_PROVIDER=elevenlabs` /
+`SONG_PROVIDER=elevenlabs`, both reading the same `ELEVENLABS_API_KEY`
+(same account, different products — Eleven Music for songs). Pick an
+actual voice from
 [elevenlabs.io/app/voice-library](https://elevenlabs.io/app/voice-library)
-and put its ID in `narration.voice_id` (the shipped default, "George", is
-just ElevenLabs' own docs example, not a considered choice for kids'
-content). Unlike `pika.py` (built from search-result summaries since
-fal.ai was blocked outright), `elevenlabs.py` uses ElevenLabs' official
-Python SDK and was confirmed directly against their "Make your first
-request" docs example — no unverified guesswork here.
+for `narration.voice_id` (the shipped default, "George", is just
+ElevenLabs' own docs example, not a considered choice for kids' content).
+Unlike `pika.py` (built from search-result summaries since fal.ai was
+blocked outright), both `tts_providers/elevenlabs.py` and
+`song_providers/elevenlabs.py` use ElevenLabs' official Python SDK and
+were confirmed directly against their own docs examples — no unverified
+guesswork here.
 
 ## Running this unattended
 
@@ -190,7 +200,7 @@ clips to composite in.
 | 1. scan | `YOUTUBE_API_KEY` | Google Cloud Console → enable "YouTube Data API v3" → Credentials → API key. Read-only, no OAuth. |
 | 2. ideate | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | 3. generate | `RUNWAY_API_KEY` or `FAL_KEY` | Set `VIDEO_PROVIDER=runway` or `VIDEO_PROVIDER=pika`. Pika's API is served through [fal.ai](https://fal.ai) (a `FAL_KEY`, not a separate Pika key). See `src/video_providers/` to plug in a different vendor (Kling, Luma, Sora, ...) — they all follow roughly the same submit/poll/download shape. |
-| 3. narration | `ELEVENLABS_API_KEY` | Set `TTS_PROVIDER=elevenlabs`. [elevenlabs.io](https://elevenlabs.io) — also pick a real voice ID from their voice library for `narration.voice_id` in config. |
+| 3. narration/song | `ELEVENLABS_API_KEY` | Set `TTS_PROVIDER=elevenlabs` and/or `SONG_PROVIDER=elevenlabs` (same key, different products). [elevenlabs.io](https://elevenlabs.io) — also pick a real voice ID from their voice library for `narration.voice_id` in config. |
 | 5. upload | OAuth client + token | Run `python scripts/setup_youtube_oauth.py` once (see that script's docstring for the one-time Cloud Console setup). |
 
 ## Configuration
@@ -212,17 +222,21 @@ one-line change once you're confident.
 config/config.yaml           all the tunable pipeline settings, incl. mascot design
 src/
   trend_scanner.py           stage 1
-  ideation.py                stage 2 (incl. JSON/schema validation + duplicate-avoidance)
-  video_generator.py         stage 3 (scenes -> concat -> mascot composite -> captions -> narration -> music -> bumpers)
+  ideation.py                stage 2 (incl. JSON/schema validation + duplicate-avoidance + format: song|narration)
+  video_generator.py         stage 3 (scenes -> concat -> mascot composite -> captions -> narration/song -> music -> bumpers)
   video_providers/           stage 3 (pluggable text-to-video backends)
     base.py                  the interface
     mock.py                  keyless local placeholder (ffmpeg color+text)
     runway.py                real text-to-video example
     pika.py                  real text-to-video example (via fal.ai)
-  tts_providers/             stage 3 (pluggable text-to-speech backends)
+  tts_providers/             stage 3 (pluggable text-to-speech backends, format: narration)
     base.py                  the interface
     mock.py                  keyless local placeholder (a tone, not silence)
     elevenlabs.py            real text-to-speech provider
+  song_providers/            stage 3 (pluggable song-generation backends, format: song)
+    base.py                  the interface
+    mock.py                  keyless local placeholder (a melodic sweep)
+    elevenlabs.py            real song provider (Eleven Music)
   review.py                  stage 4 (incl. prune for old rejected videos)
   uploader.py                stage 5
   pipeline.py                CLI entrypoint wiring it all together

@@ -50,6 +50,12 @@ class Settings:
         return cfg
 
     @property
+    def song(self) -> dict:
+        cfg = dict(self.raw.get("song", {"enabled": False}))
+        cfg["provider"] = os.environ.get("SONG_PROVIDER", cfg.get("provider", "mock"))
+        return cfg
+
+    @property
     def review(self) -> dict:
         return self.raw["review"]
 

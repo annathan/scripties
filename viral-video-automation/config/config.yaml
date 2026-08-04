@@ -86,6 +86,22 @@ narration:
   # so it doesn't compete with spoken narration for clarity.
   music_volume_when_narration: 0.15
 
+# Sung songs, for concepts ideation tags format: "song" (as opposed to
+# format: "narration", spoken -- see ideation.py). Unlike narration (voiced
+# per-scene, fitted to each scene's own duration), a song is ONE
+# continuous track composed for the whole video via ElevenLabs Music, from
+# a style prompt plus the concept's scene narration lines used as lyrics.
+# It already includes music, so song-format videos skip the separate
+# background-music mixing narration-format videos use.
+song:
+  enabled: true
+  provider: mock # mock | elevenlabs -- overridden by SONG_PROVIDER env var if set; reuses ELEVENLABS_API_KEY (same account, different product)
+  model_id: "music_v2"
+  style_prompt: >
+    A cheerful, warm children's song with a simple, friendly, gentle
+    melody suitable for toddlers -- age-appropriate instrumentation,
+    not too loud or intense.
+
 # Recurring channel mascot. Appears as a standalone bumper at the very start
 # and end of each video, plus a brief corner pop-in between scenes -- it's a
 # signature, not the star: scene content (video_generation above) is theme-
