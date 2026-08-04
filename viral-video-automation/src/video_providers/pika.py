@@ -1,37 +1,22 @@
 from __future__ import annotations
 
-import time
+import logging
+import os
 from pathlib import Path
 
+import fal_client
 import requests
 
 from .base import VideoProvider
 
-# Pika's official API access is served through fal.ai (https://fal.ai) using
-# a FAL_KEY. Confirmed against fal's own docs for fal-ai/pika/v2.2/text-to-video
-# (JS client + REST queue pattern, and the Input/Output schema pages):
-#
-#   POST https://queue.fal.run/fal-ai/pika/v2.2/text-to-video
-#     {"prompt": ..., "negative_prompt": ..., "seed": ...,
-#      "aspect_ratio": "16:9"|"9:16"|"1:1"|"4:5"|"5:4"|"3:2"|"2:3",
-#      "resolution": "720p"|"1080p", "duration": 5|10}
-#   -> {"request_id": ..., "status_url": ..., "response_url": ...}
-#   GET  {status_url}   -> {"status": "IN_QUEUE"|"IN_PROGRESS"|"COMPLETED"|...}
-#   GET  {response_url} -> {"video": {"url": "..."}}
-#
-# One thing this schema forces on us: `duration` is an enum of exactly 5 or
-# 10 seconds, not a free-form number. generate_scene_clip rounds whatever
-# scene_duration video_generator.py asks for to the nearest allowed value --
-# the actual rendered clip can therefore be shorter/longer than requested.
-# video_generator.py accounts for this by measuring each clip's real
-# duration (ffprobe) after generation rather than assuming the requested
-# one, so captions/mascot timing stay in sync regardless. If you tune
-# video_generation.scenes_per_video / target_duration_seconds, note that
-# whatever scene length you land on will get pulled to 5s or 10s here.
-FAL_QUEUE_BASE = "https://queue.fal.run"
+logger = logging.getLogger(__name__)
+
+# Pika's official API access is served through fal.ai using a FAL_KEY.
+# Uses fal.ai's official Python SDK (fal_client.subscribe(), which handles
+# the submit -> poll -> result flow internally) rather than hand-rolled
+# REST calls -- confirmed directly against fal.ai's own docs example for
+# fal-ai/pika/v2.2/text-to-video, pulled from the live model page's API tab.
 FAL_MODEL_ID = "fal-ai/pika/v2.2/text-to-video"
-POLL_INTERVAL_SECONDS = 5
-POLL_TIMEOUT_SECONDS = 600
 
 _ASPECT_RATIOS = {
     "16:9": 16 / 9,
@@ -58,54 +43,40 @@ def _closest_duration(duration_seconds: float) -> int:
     return min(_ALLOWED_DURATIONS, key=lambda d: abs(d - duration_seconds))
 
 
+def _log_queue_update(update) -> None:
+    if isinstance(update, fal_client.InProgress):
+        for log in update.logs:
+            logger.info(f"[pika] {log['message']}")
+
+
 class PikaVideoProvider(VideoProvider):
-    """Text-to-video generation via Pika, accessed through fal.ai's queue API."""
+    """Text-to-video generation via Pika, through fal.ai's official SDK."""
 
     def __init__(self, api_key: str):
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "Authorization": f"Key {api_key}",
-                "Content-Type": "application/json",
-            }
-        )
+        # fal_client reads FAL_KEY from the environment rather than taking
+        # a key in its constructor -- set it explicitly here instead of
+        # relying on it already being set, so this provider doesn't depend
+        # on load order elsewhere.
+        os.environ["FAL_KEY"] = api_key
 
     def generate_scene_clip(
         self, prompt: str, duration_seconds: float, resolution: str, out_path: Path
     ) -> Path:
         width, height = (int(x) for x in resolution.split("x"))
 
-        submit = self.session.post(
-            f"{FAL_QUEUE_BASE}/{FAL_MODEL_ID}",
-            json={
+        result = fal_client.subscribe(
+            FAL_MODEL_ID,
+            arguments={
                 "prompt": prompt,
                 "aspect_ratio": _closest_aspect_ratio(width, height),
                 "resolution": _resolution_tier(width, height),
                 "duration": _closest_duration(duration_seconds),
             },
+            with_logs=True,
+            on_queue_update=_log_queue_update,
         )
-        submit.raise_for_status()
-        submitted = submit.json()
-        request_id = submitted["request_id"]
-        status_url = submitted.get("status_url") or f"{FAL_QUEUE_BASE}/{FAL_MODEL_ID}/requests/{request_id}/status"
-        response_url = submitted.get("response_url") or f"{FAL_QUEUE_BASE}/{FAL_MODEL_ID}/requests/{request_id}"
 
-        elapsed = 0
-        while elapsed < POLL_TIMEOUT_SECONDS:
-            time.sleep(POLL_INTERVAL_SECONDS)
-            elapsed += POLL_INTERVAL_SECONDS
-            status_resp = self.session.get(status_url)
-            status_resp.raise_for_status()
-            status = status_resp.json().get("status")
-
-            if status == "COMPLETED":
-                result = self.session.get(response_url)
-                result.raise_for_status()
-                video_url = result.json()["video"]["url"]
-                video_bytes = requests.get(video_url, timeout=60).content
-                out_path.write_bytes(video_bytes)
-                return out_path
-            if status in ("ERROR", "FAILED"):
-                raise RuntimeError(f"Pika (fal.ai) generation failed for request {request_id}: {status_resp.text}")
-
-        raise TimeoutError(f"Pika (fal.ai) generation for request {request_id} did not finish within {POLL_TIMEOUT_SECONDS}s")
+        video_url = result["video"]["url"]
+        video_bytes = requests.get(video_url, timeout=60).content
+        out_path.write_bytes(video_bytes)
+        return out_path
