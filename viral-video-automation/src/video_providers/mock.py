@@ -5,6 +5,7 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+from ..fonts import ffmpeg_escape_path, find_font
 from .base import VideoProvider
 
 
@@ -43,8 +44,14 @@ class MockVideoProvider(VideoProvider):
         wrapped = "\n".join(textwrap.wrap(prompt, width=28)[:6])
         text = _escape_drawtext(wrapped)
 
+        # Explicit fontfile= bypasses fontconfig's default-font lookup,
+        # which crashes ("Cannot load default config file") on plenty of
+        # Windows ffmpeg builds that ship without a working fontconfig setup.
+        found = find_font()
+        font_clause = f"fontfile='{ffmpeg_escape_path(found[0])}':" if found else ""
+
         drawtext = (
-            f"drawtext=text='{text}':fontcolor=white:fontsize=32:"
+            f"drawtext={font_clause}text='{text}':fontcolor=white:fontsize=32:"
             "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5:boxborderw=16"
         )
         cmd = [
