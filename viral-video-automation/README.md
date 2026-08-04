@@ -50,6 +50,34 @@ script any time you tweak the design in config.
 Design rationale, and — if the channel takes off — how to turn the AI
 design into real merch/stickers, is in `assets/mascot/DESIGN_BRIEF.md`.
 
+## Narration (text-to-speech)
+
+Every scene's `narration` line gets voiced (`config.yaml` → `narration:`)
+and mixed into that scene's audio — this is what makes captions readable
+*and* audible, since text-to-video providers don't generate narration
+matched to your script on their own. Narration is **spoken**, not sung —
+a concept titled "A Silly Sorry Song" gets a spoken narration reading of
+its lines, not an actual song. Real singing would need a different kind
+of tool (e.g. Suno/Udio-style music generation) and isn't wired in.
+
+Each line is fitted to its scene's *actual* rendered duration (the same
+ffprobe-measured value captions and mascot timing use): trimmed if it
+runs long, padded with silence if it runs short. If you see "narration is
+longer than its video clip" warnings often, either shorten your narration
+style or give scenes more room (`target_duration_seconds` /
+`scenes_per_video`). Background music gets ducked
+(`music_volume_when_narration`) so it doesn't compete with narration.
+
+Default provider is ElevenLabs, via `TTS_PROVIDER=elevenlabs` +
+`ELEVENLABS_API_KEY` — pick an actual voice from
+[elevenlabs.io/app/voice-library](https://elevenlabs.io/app/voice-library)
+and put its ID in `narration.voice_id` (the shipped default is just a
+placeholder). Like `pika.py`, `elevenlabs.py` was built from ElevenLabs'
+long-stable, widely-documented API shape rather than a live-verified
+fetch (doc-site fetches were blocked by bot detection) — worth a quick
+check against your account's own API reference before relying on it for
+real spend.
+
 ## Running this unattended
 
 The goal is a couple of uploads a week without babysitting a terminal. To
@@ -162,6 +190,7 @@ clips to composite in.
 | 1. scan | `YOUTUBE_API_KEY` | Google Cloud Console → enable "YouTube Data API v3" → Credentials → API key. Read-only, no OAuth. |
 | 2. ideate | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | 3. generate | `RUNWAY_API_KEY` or `FAL_KEY` | Set `VIDEO_PROVIDER=runway` or `VIDEO_PROVIDER=pika`. Pika's API is served through [fal.ai](https://fal.ai) (a `FAL_KEY`, not a separate Pika key). See `src/video_providers/` to plug in a different vendor (Kling, Luma, Sora, ...) — they all follow roughly the same submit/poll/download shape. |
+| 3. narration | `ELEVENLABS_API_KEY` | Set `TTS_PROVIDER=elevenlabs`. [elevenlabs.io](https://elevenlabs.io) — also pick a real voice ID from their voice library for `narration.voice_id` in config. |
 | 5. upload | OAuth client + token | Run `python scripts/setup_youtube_oauth.py` once (see that script's docstring for the one-time Cloud Console setup). |
 
 ## Configuration
@@ -184,12 +213,16 @@ config/config.yaml           all the tunable pipeline settings, incl. mascot des
 src/
   trend_scanner.py           stage 1
   ideation.py                stage 2 (incl. JSON/schema validation + duplicate-avoidance)
-  video_generator.py         stage 3 (scenes -> concat -> mascot composite -> captions -> bumpers -> music)
+  video_generator.py         stage 3 (scenes -> concat -> mascot composite -> captions -> narration -> music -> bumpers)
   video_providers/           stage 3 (pluggable text-to-video backends)
     base.py                  the interface
     mock.py                  keyless local placeholder (ffmpeg color+text)
     runway.py                real text-to-video example
     pika.py                  real text-to-video example (via fal.ai)
+  tts_providers/             stage 3 (pluggable text-to-speech backends)
+    base.py                  the interface
+    mock.py                  keyless local placeholder (a tone, not silence)
+    elevenlabs.py            real text-to-speech provider
   review.py                  stage 4 (incl. prune for old rejected videos)
   uploader.py                stage 5
   pipeline.py                CLI entrypoint wiring it all together

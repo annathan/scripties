@@ -44,6 +44,12 @@ class Settings:
         return self.raw.get("mascot", {"enabled": False})
 
     @property
+    def narration(self) -> dict:
+        cfg = dict(self.raw.get("narration", {"enabled": False}))
+        cfg["provider"] = os.environ.get("TTS_PROVIDER", cfg.get("provider", "mock"))
+        return cfg
+
+    @property
     def review(self) -> dict:
         return self.raw["review"]
 
@@ -74,6 +80,10 @@ class Settings:
         # Pika's API is served through fal.ai; FAL_KEY matches fal's own
         # SDK/CLI convention so any snippets copied from their docs work as-is.
         return os.environ.get("FAL_KEY") or None
+
+    @property
+    def elevenlabs_api_key(self) -> str | None:
+        return os.environ.get("ELEVENLABS_API_KEY") or None
 
     @property
     def youtube_client_secret_file(self) -> Path:

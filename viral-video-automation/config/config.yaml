@@ -67,6 +67,25 @@ video_generation:
     dir: assets/music
     license_notes: "Only place music here that you have a license to use commercially (royalty-free library with a commercial/YouTube license, or fully AI-generated/owned). See assets/music/README.md."
 
+# Spoken narration (text-to-speech). Each scene's narration line is voiced
+# and mixed into that scene's audio, fitted to the scene's actual rendered
+# duration (trimmed if the narration runs long, padded with silence if it
+# runs short -- see video_generator.py). This produces SPOKEN narration,
+# not singing -- concepts titled as "songs" will still just be spoken
+# aloud, not sung.
+narration:
+  enabled: true
+  provider: mock # mock | elevenlabs -- overridden by TTS_PROVIDER env var if set
+  # ElevenLabs voice ID. This default ("Rachel", one of ElevenLabs' classic
+  # premade voices) is just a placeholder -- browse
+  # https://elevenlabs.io/app/voice-library and swap in a voice that
+  # actually suits warm children's narration.
+  voice_id: "21m00Tcm4TlvDq8ikWAM"
+  model_id: "eleven_multilingual_v2"
+  # Background music is ducked lower than its no-narration default (0.25)
+  # so it doesn't compete with spoken narration for clarity.
+  music_volume_when_narration: 0.15
+
 # Recurring channel mascot. Appears as a standalone bumper at the very start
 # and end of each video, plus a brief corner pop-in between scenes -- it's a
 # signature, not the star: scene content (video_generation above) is theme-
