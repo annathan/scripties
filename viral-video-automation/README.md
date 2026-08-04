@@ -71,12 +71,12 @@ style or give scenes more room (`target_duration_seconds` /
 Default provider is ElevenLabs, via `TTS_PROVIDER=elevenlabs` +
 `ELEVENLABS_API_KEY` — pick an actual voice from
 [elevenlabs.io/app/voice-library](https://elevenlabs.io/app/voice-library)
-and put its ID in `narration.voice_id` (the shipped default is just a
-placeholder). Like `pika.py`, `elevenlabs.py` was built from ElevenLabs'
-long-stable, widely-documented API shape rather than a live-verified
-fetch (doc-site fetches were blocked by bot detection) — worth a quick
-check against your account's own API reference before relying on it for
-real spend.
+and put its ID in `narration.voice_id` (the shipped default, "George", is
+just ElevenLabs' own docs example, not a considered choice for kids'
+content). Unlike `pika.py` (built from search-result summaries since
+fal.ai was blocked outright), `elevenlabs.py` uses ElevenLabs' official
+Python SDK and was confirmed directly against their "Make your first
+request" docs example — no unverified guesswork here.
 
 ## Running this unattended
 
