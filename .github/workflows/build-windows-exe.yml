@@ -1,0 +1,51 @@
+name: Build eDiscovery PDF Combiner (Windows exe)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "ediscovery-pdf-combiner/**"
+      - ".github/workflows/build-windows-exe.yml"
+    tags:
+      - "ediscovery-pdf-combiner-v*"
+  pull_request:
+    paths:
+      - "ediscovery-pdf-combiner/**"
+      - ".github/workflows/build-windows-exe.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ediscovery-pdf-combiner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Run unit tests
+        run: pytest tests/
+
+      - name: Build exe
+        run: pyinstaller build/pdf_combiner.spec --distpath dist --workpath build/pyinstaller
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eDiscovery-PDF-Combiner-windows
+          path: ediscovery-pdf-combiner/dist/*.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/ediscovery-pdf-combiner-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ediscovery-pdf-combiner/dist/*.exe
